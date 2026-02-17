@@ -1,0 +1,43 @@
+- name: Configure hostname and static IP
+  hosts: servers
+  become: yes
+
+  vars:
+    new_hostname: web01
+    interface_name: ens33
+    static_ip: 192.168.1.100/24
+    gateway_ip: 192.168.1.1
+    dns_servers:
+      - 192.168.0.221
+      - 192.168.0.222
+
+  tasks:
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ new_hostname }}"
+
+    - name: Update /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ new_hostname }}"
+        state: present
+
+    - name: Configure static IP with Netplan
+      ansible.builtin.copy:
+        dest: /etc/netplan/01-static-ip.yaml
+        content: |
+          network:
+            version: 2
+            renderer: networkd
+            ethernets:
+              {{ interface_name }}:
+                dhcp4: no
+                addresses:
+                  - {{ static_ip }}
+                gateway4: {{ gateway_ip }}
+                nameservers:
+                  addresses: {{ dns_servers }}
+
+    - name: Apply Netplan
+      ansible.builtin.command: netplan apply
