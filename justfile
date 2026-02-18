@@ -3,16 +3,21 @@
 #   like a script, with `./justfile test`, for example.
 
 install:
-	sudo apt-get update
-	sudo apt-get upgrade
+	just update
 	sudo apt-get install ansible-core
 	wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
 	echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 	sudo apt update && sudo apt install terraform
 
+update:
+	sudo apt-get update && sudo apt-get upgrade
+
 ## terraform stuff
 init:
 	cd terraform && terraform init
+
+plan *args:
+	cd terraform && terraform plan {{args}}
 
 apply:
 	cd terraform && terraform apply
