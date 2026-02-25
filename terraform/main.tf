@@ -63,6 +63,7 @@ resource "null_resource" "upload_dns01_snippet" {
 }
 
 resource "proxmox_vm_qemu" "dns01" {
+  vmid        = 101
   name        = "dns01"
   target_node = "prox"
   depends_on  = [null_resource.upload_dns01_snippet]
@@ -85,6 +86,12 @@ resource "proxmox_vm_qemu" "dns01" {
   nameserver = "192.168.0.221 192.168.0.222"
   ipconfig0  = "ip=192.168.0.101/24,gw=192.168.0.1,ip6=dhcp"
   skip_ipv6  = true
+
+  startup_shutdown {
+    order            = -1
+    shutdown_timeout = -1
+    startup_delay    = -1
+  }
 
   serial {
     id = 0
