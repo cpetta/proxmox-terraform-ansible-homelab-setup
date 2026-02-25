@@ -36,10 +36,8 @@ variable "dns01_snippet_filename" {
 }
 
 resource "local_file" "dns01_snippet" {
-  content = templatefile("${path.module}/cloud-init/dns01.tftpl", {
+  content = templatefile("${path.module}/cloud-init/templates/dns01.tftpl", {
     tailscale_auth_key = var.tailscale_auth_key
-    ciuser             = "chloe"
-    cipassword         = var.cipassword
   })
   filename = "${path.module}/cloud-init/tmp/${var.dns01_snippet_filename}"
 }
@@ -65,7 +63,7 @@ resource "null_resource" "upload_dns01_snippet" {
 }
 
 resource "proxmox_vm_qemu" "dns01" {
-  name        = "dns01-test"
+  name        = "dns01"
   target_node = "prox"
   depends_on  = [null_resource.upload_dns01_snippet]
   agent       = 1

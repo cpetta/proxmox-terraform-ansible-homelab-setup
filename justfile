@@ -25,6 +25,13 @@ apply:
 destroy:
 	cd terraform && terraform destroy
 
+## terraform targeted commands
+apply-dns01:
+	cd terraform && terraform apply -target=module.dns01_snippet -target=module.upload_dns01_snippet -target=module.dns01
+
+destroy-dns01:
+	cd terraform && terraform destroy -target=module.dns01_snippet -target=module.upload_dns01_snippet -target=module.dns01
+
 ## ansible stuff
 run HOST *TAGS:
 	cd ansible && ansible-playbook -b run.yaml --limit {{HOST}} {{TAGS}}

@@ -8,13 +8,6 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     lock_passwd: true
-  - name: chloe
-    gecos: Chloe User
-    password: ${cipassword}
-    groups: users,admin
-    sudo: ALL=(ALL) ALL
-    shell: /bin/bash
-    lock_passwd: false
 
 runcmd:
   - curl -fsSL https://tailscale.com/install.sh | sh
