@@ -4,10 +4,12 @@
 
 install:
 	just update
+	sudo apt-get install sshpass
 	sudo apt-get install ansible-core
 	wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
 	echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-	sudo apt update && sudo apt install terraform
+	sudo apt update
+	sudo apt install terraform
 
 update:
 	sudo apt-get update && sudo apt-get upgrade
@@ -33,6 +35,9 @@ destroy-dns01:
 	cd terraform && terraform destroy -target=module.dns01_snippet -target=module.upload_dns01_snippet -target=module.dns01
 
 ## ansible stuff
+atest:
+	cd ansible && ansible-playbook -i inventory.yaml all -m ping
+
 run HOST *TAGS:
 	cd ansible && ansible-playbook -b run.yaml --limit {{HOST}} {{TAGS}}
 
