@@ -28,11 +28,8 @@ destroy:
 	cd terraform && terraform destroy
 
 ## terraform targeted commands
-apply-dns01:
-	cd terraform && terraform apply -target=module.dns01_snippet -target=module.upload_dns01_snippet -target=module.dns01
-
-destroy-dns01:
-	cd terraform && terraform destroy -target=module.dns01_snippet -target=module.upload_dns01_snippet -target=module.dns01
+dns01 action:
+	cd terraform && terraform {{action}} -target=proxmox_vm_qemu.dns01
 
 ## ansible stuff
 atest:

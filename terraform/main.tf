@@ -12,12 +12,18 @@ terraform {
 }
 
 variable "cipassword" {}
+variable "cipassword_hash" {}
+variable "ssh_public_key" {}
 variable "pm_api_token_id" {}
 variable "pm_api_token_secret" {}
 variable "pm_api_url" {}
 variable "pm_url" {}
 variable "pm_pasword" {}
 variable "tailscale_auth_key" {}
+
+variable "gateway_ip" {}
+variable "dns01_ip" {}
+variable "dns02_ip" {}
 
 provider "proxmox" {
   pm_api_url          = var.pm_api_url
@@ -39,6 +45,8 @@ variable "dns01_snippet_filename" {
 resource "local_file" "dns01_snippet" {
   content = templatefile("${path.module}/cloud-init/templates/dns01.tftpl", {
     tailscale_auth_key = var.tailscale_auth_key
+    cipassword_hash    = var.cipassword_hash
+    ssh_public_key     = var.ssh_public_key
   })
   filename = "${path.module}/cloud-init/tmp/${var.dns01_snippet_filename}"
 }
@@ -70,7 +78,7 @@ resource "proxmox_vm_qemu" "dns01" {
   depends_on  = [null_resource.upload_dns01_snippet]
   agent       = 1
   cpu {
-    cores = 2
+    cores = 1
     type  = "host"
   }
   memory           = 2048
@@ -84,8 +92,8 @@ resource "proxmox_vm_qemu" "dns01" {
   # Cloud-Init configuration: use the uploaded snippet
   cicustom   = "user=local:snippets/${var.dns01_snippet_filename}"
   ciupgrade  = true
-  nameserver = "192.168.0.221 192.168.0.222"
-  ipconfig0  = "ip=192.168.0.221/24,gw=192.168.0.1,ip6=dhcp"
+  nameserver = "${var.dns01_ip} ${var.dns02_ip} 1.1.1.1"
+  ipconfig0  = "ip=${var.dns01_ip}/24,gw=${var.gateway_ip},ip6=dhcp"
   skip_ipv6  = true
 
   startup_shutdown {

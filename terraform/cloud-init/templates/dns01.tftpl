@@ -5,9 +5,22 @@ users:
   - name: ansible
     gecos: Ansible User
     groups: users,admin,wheel
-    sudo: ALL=(ALL) NOPASSWD:ALL
+    sudo: ALL=(ALL) ALL
+    hashed_passwd: ${cipassword_hash}
     shell: /bin/bash
+    ssh_authorized_keys: [${ssh_public_key}]
     lock_passwd: true
+  - name: chloe
+    gecos: Chloe User
+    groups: users,admin,wheel
+    sudo: ALL=(ALL) ALL
+    hashed_passwd: ${cipassword_hash}
+    shell: /bin/bash
+    ssh_authorized_keys: [${ssh_public_key}]
+    lock_passwd: false
+
+packages:
+  - qemu-guest-agent
 
 runcmd:
   - curl -fsSL https://tailscale.com/install.sh | sh
@@ -21,5 +34,3 @@ runcmd:
   - curl -fsSL https://get.docker.com | sh
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
-packages:
-  - qemu-guest-agent

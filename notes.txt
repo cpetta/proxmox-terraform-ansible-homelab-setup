@@ -2,6 +2,12 @@
 qm importdisk VMID ubuntu-18.04-minimal-cloudimg-amd64.img STORAGE-ID
 qm importdisk 1000 ubuntu-24.04-server-cloudimg-amd64.img local-lvm
 
+Validate a cloud-init.yaml file
+cloud-init schema -c dns01.yml --annotate
+
+https://docs.cloud-init.io/en/latest/reference/modules.html#users-and-groups 
+mkpasswd --method=SHA-512 --rounds=500000
+
 Raw blocked URLS
 https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 https://raw.githubusercontent.com/Firestorrrm/Minimal-Hosts-Blocker/master/iosadlist.txt

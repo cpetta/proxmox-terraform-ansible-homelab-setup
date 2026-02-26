@@ -1,5 +1,6 @@
 ### Ansible ###
 *.retry
+.vault-password
 
 ### Terraform ###
 # Local .terraform directories
@@ -60,3 +61,5 @@ terraform.rc
 secrets.yaml
 terraform/.terraform.lock.hcl
 terraform/cloud-init/tmp/*
+
+secret_notes.txt
