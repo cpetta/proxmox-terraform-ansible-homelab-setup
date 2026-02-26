@@ -1,0 +1,21 @@
+---
+- name: create directory structure for technitium
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0775
+  with_items:
+    - "{{ technitium_directory }}"
+
+- name: create docker-compose file to run container
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ technitium_directory }}/docker-compose.yml"
+    mode: 0655
+  vars:
+    configurations: "{{ dns01_config }}"
+
+- name: start container using docker-compose
+  command: docker compose up -d --force-recreate
+  args:
+    chdir: "{{ technitium_directory }}"

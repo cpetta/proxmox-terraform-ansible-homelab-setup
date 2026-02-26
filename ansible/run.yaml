@@ -1,0 +1,8 @@
+- hosts: dns
+  vars_files:
+    - "vars/secrets.yaml"
+  vars:
+    ansible_ssh_private_key_file: "{{ ssh_key_path }}"
+  roles:
+    - role: technitium
+      tags: technitium
