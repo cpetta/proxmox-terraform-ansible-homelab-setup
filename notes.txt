@@ -8,6 +8,9 @@ cloud-init schema -c dns01.yml --annotate
 https://docs.cloud-init.io/en/latest/reference/modules.html#users-and-groups 
 mkpasswd --method=SHA-512 --rounds=500000
 
+Setup ansible
+export ANSIBLE_CONFIG=./ansible.cfg
+
 Raw blocked URLS
 https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 https://raw.githubusercontent.com/Firestorrrm/Minimal-Hosts-Blocker/master/iosadlist.txt

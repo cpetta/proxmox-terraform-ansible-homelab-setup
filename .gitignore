@@ -1,6 +1,7 @@
 ### Ansible ###
 *.retry
 .vault-password
+**/ssh/*
 
 ### Terraform ###
 # Local .terraform directories
