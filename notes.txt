@@ -12,6 +12,8 @@ Setup ansible
 export ANSIBLE_CONFIG=./ansible.cfg
 chmod 600 ansible/ssh/private_key
 
+ansible-playbook --syntax-check main.yml
+
 Raw blocked URLS
 https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 https://raw.githubusercontent.com/Firestorrrm/Minimal-Hosts-Blocker/master/iosadlist.txt
