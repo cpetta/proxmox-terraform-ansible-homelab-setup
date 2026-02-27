@@ -10,6 +10,7 @@ mkpasswd --method=SHA-512 --rounds=500000
 
 Setup ansible
 export ANSIBLE_CONFIG=./ansible.cfg
+chmod 600 ansible/ssh/private_key
 
 Raw blocked URLS
 https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts

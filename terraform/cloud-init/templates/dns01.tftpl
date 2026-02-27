@@ -5,7 +5,7 @@ users:
   - name: ansible
     gecos: Ansible User
     groups: users,admin,wheel
-    sudo: ALL=(ALL) ALL
+    sudo: ALL=(ALL) NOPASSWD:ALL
     hashed_passwd: ${cipassword_hash}
     shell: /bin/bash
     ssh_authorized_keys: [${ssh_public_key}]
