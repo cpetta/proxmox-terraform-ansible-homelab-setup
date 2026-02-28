@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "Telmate/proxmox"
-      version = "3.0.2-rc07"
+      source  = "bpg/proxmox"
+      version = "0.97.0"
     }
     local = {
       source  = "hashicorp/local"
@@ -14,23 +14,57 @@ terraform {
 variable "cipassword" {}
 variable "cipassword_hash" {}
 variable "ssh_public_key" {}
-variable "pm_api_token_id" {}
-variable "pm_api_token_secret" {}
+variable "pm_api_token" {}
 variable "pm_api_url" {}
-variable "pm_url" {}
 variable "pm_pasword" {}
 variable "tailscale_auth_key" {}
 
 variable "gateway_ip" {}
-variable "dns01_ip" {}
-variable "dns02_ip" {}
+
+variable "pm1_ip" {}
+variable "pm2_ip" {}
+variable "pm3_ip" {}
+
+variable "dns1_ip" {}
+variable "dns2_ip" {}
+variable "dns3_ip" {}
 
 provider "proxmox" {
-  pm_api_url          = var.pm_api_url
-  pm_api_token_id     = var.pm_api_token_id
-  pm_api_token_secret = var.pm_api_token_secret
-  pm_tls_insecure     = true
-  pm_debug            = true
+  endpoint            = var.pm_api_url
+  api_token           = var.pm_api_token
+  username = "root@pam"
+  password = var.pm_pasword
+  insecure = true
+  
+  ssh {
+    username = "root"
+    password = var.pm_pasword
+    private_key = file("~/.ssh/server_ed25519")
+    agent    = true
+
+    node {
+      name    = "pm1"
+      address = var.pm1_ip
+    }
+    node {
+      name    = "pm2"
+      address = var.pm2_ip
+    }
+    node {
+      name    = "pm3"
+      address = var.pm3_ip
+    }
+  }
+}
+
+resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
+  content_type = "import"
+  datastore_id = "local"
+  node_name    = "pm1"
+  url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
+  file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
+  overwrite    = true
+  overwrite_unmanaged = true
 }
 
 
@@ -51,85 +85,67 @@ resource "local_file" "dns01_snippet" {
   filename = "${path.module}/cloud-init/tmp/${var.dns01_snippet_filename}"
 }
 
-resource "null_resource" "upload_dns01_snippet" {
-  depends_on = [local_file.dns01_snippet]
-
-  triggers = {
-    content = local_file.dns01_snippet.content
-  }
-
-  provisioner "local-exec" {
-    #command = <<-EOT
-    #      curl -k -X POST "${var.pm_api_url}/nodes/prox/storage/local/upload" \
-    #      -F "content=snippets" \
-    #      -F "filename=${local_file.tailscale_snippet.filename}" \
-    #      -H "Authorization: PVEAPIToken=${var.pm_api_token_id}=${var.pm_api_token_secret}"
-    #EOT
-    command = <<-EOT
-      sshpass -p "${var.pm_pasword}" scp ${local_file.dns01_snippet.filename} root@${var.pm_url}:/var/lib/vz/snippets/
-    EOT
+resource "proxmox_virtual_environment_file" "dns01_cloud_config" {
+  depends_on  = [resource.local_file.dns01_snippet]
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = "pm1"
+  source_file {
+    path = resource.local_file.dns01_snippet.filename
   }
 }
 
-resource "proxmox_vm_qemu" "dns01" {
-  vmid        = 101
+resource "proxmox_virtual_environment_vm" "dns01" {
+  vm_id        = 101
   name        = "dns01"
-  target_node = "prox"
-  depends_on  = [null_resource.upload_dns01_snippet]
-  agent       = 1
+  node_name   = "pm1"
+  description = "Managed by Terraform"
+  tags        = ["terraform", "ubuntu"]
+  started = true
+  on_boot = true
+  reboot_after_update = true
+  
+  # depends_on  = [null_resource.upload_dns01_snippet]
+
   cpu {
     cores = 1
     type  = "host"
   }
-  memory           = 2048
-  boot             = "order=scsi0"      # has to be the same as the OS disk of the template
-  clone            = "Ubuntu-24.04-LTS" # The name of the template
-  full_clone       = false
-  scsihw           = "virtio-scsi-single"
-  vm_state         = "running"
-  automatic_reboot = true
-
-  # Cloud-Init configuration: use the uploaded snippet
-  cicustom   = "user=local:snippets/${var.dns01_snippet_filename}"
-  ciupgrade  = true
-  nameserver = "${var.dns01_ip} ${var.dns02_ip} 1.1.1.1"
-  ipconfig0  = "ip=${var.dns01_ip}/24,gw=${var.gateway_ip},ip6=dhcp"
-  skip_ipv6  = true
-
-  startup_shutdown {
-    order            = -1
-    shutdown_timeout = -1
-    startup_delay    = -1
+  memory {
+    dedicated = 2048
+    floating  = 2048 # set equal to dedicated to enable ballooning
   }
-
-  serial {
-    id = 0
+  disk {
+    datastore_id = "local-lvm"
+    import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image.id
+    interface    = "scsi0"
+    iothread     = true
+    discard      = "on"
+    size         = 10
   }
+  
+  initialization {
+    datastore_id = "local-lvm"
+    user_data_file_id   = proxmox_virtual_environment_file.dns01_cloud_config.id
 
-  disks {
-    scsi {
-      scsi0 {
-        # Specify disk from our template
-        disk {
-          storage = "local-lvm"
-          # The size of the disk should be at least as big as the disk in the template. If it's smaller, the disk will be recreated
-          size = "10G"
-        }
+    ip_config {
+      ipv4 {
+        address = "${var.dns1_ip}/24"
+        gateway = var.gateway_ip
       }
     }
-    ide {
-      # Some images require a cloud-init disk on the IDE controller, others on the SCSI or SATA controller
-      ide1 {
-        cloudinit {
-          storage = "local-lvm"
-        }
-      }
+    dns {
+      servers = [var.dns1_ip, var.dns2_ip, "1.1.1.1"]
     }
   }
 
-  network {
-    id     = 0
+  network_device {
     bridge = "vmbr0"
-    model  = "virtio"
+    model = "virtio"
+  }
+  startup {
+    order      = -1
+    down_delay = -1
+    up_delay   = -1
   }
 }
