@@ -11,6 +11,9 @@ mkpasswd --method=SHA-512 --rounds=500000
 
 Setup ansible
 export ANSIBLE_CONFIG=./ansible.cfg
+chmod 600 ansible/ssh/private_key
+
+ansible-playbook --syntax-check main.yml
 
 Proxmox node down for maintenence
 ha-manager crm-command node-maintenance enable <node name>
