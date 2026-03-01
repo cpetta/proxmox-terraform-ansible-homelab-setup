@@ -4,32 +4,31 @@
 
 install:
 	just update
-	sudo apt-get install sshpass
 	sudo apt-get install ansible-core
-	wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-	echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-	sudo apt update
-	sudo apt install terraform
+	curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh -o install-opentofu.sh
+	chmod +x install-opentofu.sh
+	./install-opentofu.sh --install-method deb
+	rm -f install-opentofu.sh
 
 update:
 	sudo apt-get update && sudo apt-get upgrade
 
-## terraform stuff
+## terraform/tofu stuff
 init:
-	cd terraform && terraform init
+	cd terraform && tofu init
 
 plan *args:
-	cd terraform && terraform plan {{args}}
+	cd terraform && tofu plan {{args}}
 
 apply:
-	cd terraform && terraform apply
+	cd terraform && tofu apply
 
 destroy:
-	cd terraform && terraform destroy -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image
+	cd terraform && tofu destroy -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image
 
-## terraform targeted commands
+## terraform/tofu targeted commands
 dns01 action:
-	cd terraform && terraform {{action}} -target=proxmox_virtual_environment_vm.dns01
+	cd terraform && tofu {{action}} -target=proxmox_virtual_environment_vm.dns01
 
 ## ansible stuff
 atest:
