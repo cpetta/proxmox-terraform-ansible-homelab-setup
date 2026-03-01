@@ -25,11 +25,11 @@ apply:
 	cd terraform && terraform apply
 
 destroy:
-	cd terraform && terraform destroy
+	cd terraform && terraform destroy -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image
 
 ## terraform targeted commands
 dns01 action:
-	cd terraform && terraform {{action}} -target=proxmox_vm_qemu.dns01
+	cd terraform && terraform {{action}} -target=proxmox_virtual_environment_vm.dns01
 
 ## ansible stuff
 atest:
