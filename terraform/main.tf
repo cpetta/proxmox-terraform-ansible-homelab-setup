@@ -11,11 +11,17 @@ terraform {
   }
 }
 
+variable "local" {
+  type = bool
+  default = false
+}
+
 variable "cipassword" {}
 variable "cipassword_hash" {}
 variable "ssh_public_key" {}
 variable "pm_api_token" {}
 variable "pm_api_url" {}
+variable "pm_api_url_remote" {}
 variable "pm_pasword" {}
 variable "tailscale_auth_key" {}
 
@@ -30,8 +36,8 @@ variable "dns2_ip" {}
 variable "dns3_ip" {}
 
 provider "proxmox" {
-  endpoint            = var.pm_api_url
-  api_token           = var.pm_api_token
+  endpoint = var.local ? var.pm_api_url : var.pm_api_url_remote
+  api_token = var.pm_api_token
   username = "root@pam"
   password = var.pm_pasword
   insecure = true
@@ -39,20 +45,20 @@ provider "proxmox" {
   ssh {
     username = "root"
     password = var.pm_pasword
-    private_key = file("~/.ssh/server_ed25519")
+    private_key = file("../ssh/private_key")
     agent    = true
 
     node {
       name    = "pm1"
-      address = var.pm1_ip
+      address = var.local ? var.pm1_ip : "pm1"
     }
     node {
       name    = "pm2"
-      address = var.pm2_ip
+      address = var.local ? var.pm2_ip : "pm2"
     }
     node {
       name    = "pm3"
-      address = var.pm3_ip
+      address = var.local ? var.pm3_ip : "pm3"
     }
   }
 }
@@ -66,7 +72,6 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
   overwrite    = true
   overwrite_unmanaged = true
 }
-
 
 #-------------------------------------------------------
 # DNS01
