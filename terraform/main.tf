@@ -81,6 +81,11 @@ variable "dns01_snippet_filename" {
   default = "dns01.yml"
 }
 
+variable "dns01_target" {
+  type = string
+  default = "pm1"
+}
+
 resource "local_file" "dns01_snippet" {
   content = templatefile("${path.module}/cloud-init/templates/dns01.tftpl", {
     tailscale_auth_key = var.tailscale_auth_key
@@ -94,7 +99,7 @@ resource "proxmox_virtual_environment_file" "dns01_cloud_config" {
   depends_on  = [resource.local_file.dns01_snippet]
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = "pm1"
+  node_name    = var.dns01_target
   source_file {
     path = resource.local_file.dns01_snippet.filename
   }
@@ -103,7 +108,7 @@ resource "proxmox_virtual_environment_file" "dns01_cloud_config" {
 resource "proxmox_virtual_environment_vm" "dns01" {
   vm_id        = 101
   name        = "dns01"
-  node_name   = "pm1"
+  node_name   = var.dns01_target
   description = "Managed by Terraform"
   tags        = ["terraform", "ubuntu"]
   started = true
@@ -149,8 +154,8 @@ resource "proxmox_virtual_environment_vm" "dns01" {
     model = "virtio"
   }
   startup {
-    order      = -1
     down_delay = -1
+    order      = -1
     up_delay   = -1
   }
 }
