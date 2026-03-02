@@ -53,14 +53,6 @@
   with_items:
     - "{{ technitium_directory }}"
 
-- name: create directory structure for technitium
-  file:
-    path: "{{ item }}"
-    state: directory
-    mode: 0775
-  with_items:
-    - "{{ technitium_directory }}"
-
 - name: create docker-compose file to run container
   template:
     src: docker-compose.yml.j2

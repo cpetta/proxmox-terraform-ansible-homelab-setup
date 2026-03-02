@@ -24,7 +24,7 @@ apply:
 	cd terraform && tofu apply
 
 destroy:
-	cd terraform && tofu destroy -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image
+	cd terraform && tofu destroy -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image_1 -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image_2 -exclude=proxmox_virtual_environment_download_file.ubuntu_cloud_image_3
 
 ## terraform/tofu targeted commands
 dns01 action:
