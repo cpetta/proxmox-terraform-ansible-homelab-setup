@@ -148,6 +148,10 @@ resource "proxmox_virtual_environment_vm" "dns01" {
     model = "virtio"
   }
 
+  agent {
+    enabled = true
+  }
+
   startup {
     down_delay = -1
     order      = -1
