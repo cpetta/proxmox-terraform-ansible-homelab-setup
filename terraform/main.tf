@@ -76,23 +76,19 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
 #-------------------------------------------------------
 # DNS01
 #-------------------------------------------------------
-variable "dns01_snippet_filename" {
-  type    = string
-  default = "dns01.yml"
-}
-
 variable "dns01_target" {
   type = string
-  default = "pm1"
+  default = "pm2"
 }
 
 resource "local_file" "dns01_snippet" {
-  content = templatefile("${path.module}/cloud-init/templates/dns01.tftpl", {
+  content = templatefile("${path.module}/cloud-init/templates/dns.tftpl", {
+    hostname           = "dns01"
     tailscale_auth_key = var.tailscale_auth_key
     cipassword_hash    = var.cipassword_hash
     ssh_public_key     = var.ssh_public_key
   })
-  filename = "${path.module}/cloud-init/tmp/${var.dns01_snippet_filename}"
+  filename = "${path.module}/cloud-init/tmp/dns01.yml"
 }
 
 resource "proxmox_virtual_environment_file" "dns01_cloud_config" {
@@ -114,8 +110,6 @@ resource "proxmox_virtual_environment_vm" "dns01" {
   started = true
   on_boot = true
   reboot_after_update = true
-  
-  # depends_on  = [null_resource.upload_dns01_snippet]
 
   cpu {
     cores = 1
@@ -145,7 +139,7 @@ resource "proxmox_virtual_environment_vm" "dns01" {
       }
     }
     dns {
-      servers = ["1.1.1.1",  "1.0.0.1", "9.9.9.9"]
+      servers = ["9.9.9.9", "1.1.1.1",  "1.0.0.1"]
     }
   }
 
@@ -153,6 +147,7 @@ resource "proxmox_virtual_environment_vm" "dns01" {
     bridge = "vmbr0"
     model = "virtio"
   }
+
   startup {
     down_delay = -1
     order      = -1

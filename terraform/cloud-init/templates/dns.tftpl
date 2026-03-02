@@ -1,6 +1,6 @@
 #cloud-config
 ssh_pwauth: false
-hostname: dns01
+hostname: ${hostname}
 users:
   - name: ansible
     gecos: Ansible User
