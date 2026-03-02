@@ -140,7 +140,7 @@ resource "proxmox_virtual_environment_vm" "dns01" {
       }
     }
     dns {
-      servers = [var.dns1_ip, var.dns2_ip, "1.1.1.1"]
+      servers = ["1.1.1.1",  "1.0.0.1", "9.9.9.9"]
     }
   }
 

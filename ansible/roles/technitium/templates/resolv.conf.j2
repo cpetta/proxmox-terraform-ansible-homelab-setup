@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+
+{% if resolv_conf_search is defined and resolv_conf_search|length > 0 %}
+search {{ resolv_conf_search | join(' ') }}
+{% endif %}
+{% for nameserver in resolv_conf_nameservers %}
+nameserver {{ nameserver }}
+{% endfor %}

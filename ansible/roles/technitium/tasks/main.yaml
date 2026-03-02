@@ -1,5 +1,5 @@
 ---
-# Disable conflicting services
+# Disable conflicting DNS resolver
 - name: Disable systemd-resolved
   when: ansible_service_mgr == "systemd"
   block:
@@ -35,6 +35,15 @@
             path: /etc/resolv.conf
             state: absent
 
+# Fix for DNS on Ubuntu Minimal
+- name: Create /etc/resolv.conf from template.
+  ansible.builtin.template:
+    dest: /etc/resolv.conf
+    src: resolv.conf.j2
+    mode: '0644'
+    owner: root
+    group: root
+
 # install technitium
 - name: create directory structure for technitium
   file:
@@ -58,11 +67,11 @@
     dest: "{{ technitium_directory }}/docker-compose.yml"
     mode: 0655
   vars:
-    configurations: "{{ dns01_config }}"
+    configurations: "{{ dns_config }}"
 
 - name: Remove Docker container
   community.docker.docker_container:
-    name: "{{ dns01_config.container_name }}"
+    name: "{{ dns_config.container_name }}"
     state: absent
 
 - name: start container using docker-compose

@@ -6,3 +6,10 @@
   roles:
     - role: technitium
       tags: technitium
+
+      resolv_conf_search:
+          - example.org
+      resolv_conf_nameservers:
+        - '9.9.9.9'
+        - '1.1.1.1'
+        - '1.0.0.1'
