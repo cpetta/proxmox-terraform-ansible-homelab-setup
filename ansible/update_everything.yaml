@@ -1,0 +1,12 @@
+- name: "Update All Servers"
+  hosts: all
+  remote_user: root
+  tasks:
+  - name: Update and upgrade apt packages
+    become: true
+    apt:
+      upgrade: yes
+      update_cache: yes
+      autoclean: yes
+      autoremove: yes
+      cache_valid_time: 86400 #One day

@@ -37,6 +37,9 @@ atest:
 run HOST *TAGS:
 	cd ansible && ansible-playbook -b run.yaml --limit {{HOST}} {{TAGS}}
 
+update_everything:
+	cd ansible && ansible-playbook -b update_everything.yaml
+
 ## repo stuff
 # optionally use --force to force reinstall all requirements
 reqs *FORCE:
