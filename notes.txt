@@ -58,6 +58,11 @@ If you encounter issues, such as the pmxcfs command failing to acquire a lock, f
 
 rm -rf /etc/pve/nodes/<node-name>
 
+
+pfsense download url
+https://atxfiles.netgate.com/mirror/downloads/
+
+
 Raw blocked URLS
 https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 https://raw.githubusercontent.com/Firestorrrm/Minimal-Hosts-Blocker/master/iosadlist.txt

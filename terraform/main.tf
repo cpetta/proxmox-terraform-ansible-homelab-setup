@@ -35,6 +35,8 @@ variable "dns1_ip" {}
 variable "dns2_ip" {}
 variable "dns3_ip" {}
 
+variable "pfs1_ip" {}
+
 provider "proxmox" {
   endpoint = var.local ? var.pm_api_url : var.pm_api_url_remote
   api_token = var.pm_api_token
@@ -274,6 +276,104 @@ resource "proxmox_virtual_environment_vm" "dns2" {
   lifecycle {
     ignore_changes = [
       startup
+    ]
+  }
+}
+
+#-------------------------------------------------------
+# PF Sense 1
+#-------------------------------------------------------
+// Reference https://atxfiles.netgate.com/mirror/downloads/
+resource "proxmox_virtual_environment_download_file" "pf_sense_iso_2" {
+  content_type = "iso"
+  datastore_id = "local"
+  node_name    = "pm2"
+  url          = "https://atxfiles.netgate.com/mirror/downloads/pfSense-CE-2.7.2-RELEASE-amd64.iso.gz"
+  file_name    = "pfSense-CE-2.7.2-RELEASE-amd64.iso" # rename to *.iso for import
+  overwrite    = false
+  overwrite_unmanaged = true
+  checksum = "883fb7bc64fe548442ed007911341dd34e178449f8156ad65f7381a02b7cd9e4"
+  checksum_algorithm = "sha256"
+  decompression_algorithm = "gz"
+}
+
+variable "pfs1_target" {
+  type = string
+  default = "pm2"
+}
+
+resource "proxmox_virtual_environment_vm" "pfs1" {
+  vm_id        = 110
+  name        = "pfs1"
+  node_name   = var.pfs1_target
+  description = "Managed by Terraform"
+  tags        = ["terraform"]
+  started = true
+  on_boot = true
+  reboot_after_update = true
+
+  cpu {
+    cores = 1
+    type  = "host"
+  }
+  memory {
+    dedicated = 2048
+    floating  = 2048 # set equal to dedicated to enable ballooning
+  }
+  disk {
+    datastore_id = "local-lvm"
+    interface    = "scsi0"
+    discard      = "on"
+    size         = 50
+  }
+  cdrom {
+    file_id = proxmox_virtual_environment_download_file.pf_sense_iso_2.id
+  }
+  
+  initialization {
+    datastore_id = "local-lvm"
+    user_data_file_id   = proxmox_virtual_environment_file.pfs1_cloud_config.id
+
+    ip_config {
+      ipv4 {
+        address = "${var.pfs1_ip}/24"
+        gateway = var.gateway_ip
+      }
+    }
+    dns {
+      servers = [var.dns1_ip, var.dns2_ip]
+    }
+  }
+
+  network_device {
+    bridge = "vmbr0"
+    model = "virtio"
+  }
+
+  network_device {
+    bridge = "vmbr1"
+    model = "virtio"
+    firewall = false
+    vlan_id = 100
+  }
+
+  agent {
+    enabled = true
+  }
+
+  startup {
+    down_delay = -1
+    order      = -1
+    up_delay   = -1
+  }
+
+  lifecycle {
+    ignore_changes = [
+      started,
+      cdrom,
+      ipv4_addresses,
+      ipv6_addresses,
+      startup,
     ]
   }
 }
