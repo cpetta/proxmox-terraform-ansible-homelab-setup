@@ -99,6 +99,22 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_3" {
 }
 
 #-------------------------------------------------------
+# Testing VM
+#-------------------------------------------------------
+// Reference https://atxfiles.netgate.com/mirror/downloads/
+resource "proxmox_virtual_environment_download_file" "mint_iso_1" {
+  content_type = "iso"
+  datastore_id = "local"
+  node_name    = "pm1"
+  url          = "https://mirrors.edge.kernel.org/linuxmint/stable/22.3/linuxmint-22.3-xfce-64bit.iso"
+  file_name    = "linuxmint-22.3-xfce-64bit.iso"
+  overwrite    = false
+  overwrite_unmanaged = true
+  checksum = "45a835b5dddaf40e84d776549e0b19b3fbd49673b6cc6434ebddbfcd217df776"
+  checksum_algorithm = "sha256"
+}
+
+#-------------------------------------------------------
 # dns1
 #-------------------------------------------------------
 variable "dns1_target" {
