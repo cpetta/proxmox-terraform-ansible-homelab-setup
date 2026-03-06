@@ -1,0 +1,22 @@
+---
+# Disable lid close shutoff
+- name: set HandleLidSwitch
+  lineinfile: 
+    path: /etc/systemd/logind.conf 
+    regexp: '^(.*)HandleLidSwitch(.*)$' 
+    line: 'HandleLidSwitch=ignore'
+    backrefs: yes
+
+- name: set HandleLidSwitchExternalPower
+  lineinfile: 
+    path: /etc/systemd/logind.conf 
+    regexp: '^(.*)HandleLidSwitchExternalPower(.*)$' 
+    line: 'HandleLidSwitchExternalPower=ignore'
+    backrefs: yes
+
+- name: set HandleLidSwitchDocked
+  lineinfile: 
+    path: /etc/systemd/logind.conf 
+    regexp: '^(.*)HandleLidSwitchDocked(.*)$' 
+    line: 'HandleLidSwitchDocked=ignore'
+    backrefs: yes
