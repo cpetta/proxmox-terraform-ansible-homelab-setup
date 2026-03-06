@@ -63,13 +63,16 @@ provider "proxmox" {
   }
 }
 
+#-------------------------------------------------------
+# Cloud Image Resources
+#-------------------------------------------------------
 resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_1" {
   content_type = "import"
   datastore_id = "local"
   node_name    = "pm1"
   url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
   file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
-  overwrite    = true
+  overwrite    = false
   overwrite_unmanaged = true
 }
 
@@ -79,7 +82,7 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_2" {
   node_name    = "pm2"
   url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
   file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
-  overwrite    = true
+  overwrite    = false
   overwrite_unmanaged = true
 }
 
@@ -89,7 +92,7 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_3" {
   node_name    = "pm3"
   url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
   file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
-  overwrite    = true
+  overwrite    = false
   overwrite_unmanaged = true
 }
 
@@ -143,7 +146,6 @@ resource "proxmox_virtual_environment_vm" "dns1" {
     datastore_id = "local-lvm"
     import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image_2.id
     interface    = "scsi0"
-    iothread     = true
     discard      = "on"
     size         = 10
   }
@@ -176,6 +178,12 @@ resource "proxmox_virtual_environment_vm" "dns1" {
     down_delay = -1
     order      = -1
     up_delay   = -1
+  }
+
+  lifecycle {
+    ignore_changes = [
+      startup
+    ]
   }
 }
 
@@ -229,7 +237,6 @@ resource "proxmox_virtual_environment_vm" "dns2" {
     datastore_id = "local-lvm"
     import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image_3.id
     interface    = "scsi0"
-    iothread     = true
     discard      = "on"
     size         = 10
   }
@@ -262,5 +269,11 @@ resource "proxmox_virtual_environment_vm" "dns2" {
     down_delay = -1
     order      = -1
     up_delay   = -1
+  }
+
+  lifecycle {
+    ignore_changes = [
+      startup
+    ]
   }
 }
