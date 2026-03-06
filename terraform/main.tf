@@ -26,14 +26,30 @@ variable "pm_pasword" {}
 variable "tailscale_auth_key" {}
 
 variable "gateway_ip" {}
+variable "pm_ips" {}
+variable "dns_ips" {}
 
-variable "pm1_ip" {}
-variable "pm2_ip" {}
-variable "pm3_ip" {}
+variable "pm_nodes" {
+  type = list(string)
+  default = [
+    "pm1",
+    "pm2",
+    "pm3",
+  ]
+}
 
-variable "dns1_ip" {}
-variable "dns2_ip" {}
-variable "dns3_ip" {}
+variable dns_count {
+  type = number
+  default = 2
+}
+
+variable dns_target_nodes {
+  type = list(string)
+  default = [
+    "pm2",
+    "pm3",
+  ]
+}
 
 variable "pfs1_ip" {}
 
@@ -52,15 +68,15 @@ provider "proxmox" {
 
     node {
       name    = "pm1"
-      address = var.local ? var.pm1_ip : "pm1"
+      address = var.local ? var.pm_ips[0] : "pm1"
     }
     node {
       name    = "pm2"
-      address = var.local ? var.pm2_ip : "pm2"
+      address = var.local ? var.pm_ips[1] : "pm2"
     }
     node {
       name    = "pm3"
-      address = var.local ? var.pm3_ip : "pm3"
+      address = var.local ? var.pm_ips[2] : "pm3"
     }
   }
 }
@@ -68,30 +84,11 @@ provider "proxmox" {
 #-------------------------------------------------------
 # Cloud Image Resources
 #-------------------------------------------------------
-resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_1" {
+resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
+  count        = 3
   content_type = "import"
   datastore_id = "local"
-  node_name    = "pm1"
-  url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
-  file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
-  overwrite    = false
-  overwrite_unmanaged = true
-}
-
-resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_2" {
-  content_type = "import"
-  datastore_id = "local"
-  node_name    = "pm2"
-  url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
-  file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
-  overwrite    = false
-  overwrite_unmanaged = true
-}
-
-resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image_3" {
-  content_type = "import"
-  datastore_id = "local"
-  node_name    = "pm3"
+  node_name    = var.pm_nodes[count.index]
   url          = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
   file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
   overwrite    = false
@@ -115,37 +112,35 @@ resource "proxmox_virtual_environment_download_file" "mint_iso_1" {
 }
 
 #-------------------------------------------------------
-# dns1
+# DNS
 #-------------------------------------------------------
-variable "dns1_target" {
-  type = string
-  default = "pm2"
-}
-
-resource "local_file" "dns1_snippet" {
-  content = templatefile("${path.module}/cloud-init/templates/dns.tftpl", {
-    hostname           = "dns1"
+resource "local_file" "dns_snippet" {
+  count = var.dns_count
+  content = templatefile("${path.module}/cloud-init/templates/common.tftpl", {
+    hostname           = "dns${count.index+1}"
     tailscale_auth_key = var.tailscale_auth_key
     cipassword_hash    = var.cipassword_hash
     ssh_public_key     = var.ssh_public_key
   })
-  filename = "${path.module}/cloud-init/tmp/dns1.yml"
+  filename = "${path.module}/cloud-init/tmp/cloud_config_dns${count.index+1}.yml"
 }
 
-resource "proxmox_virtual_environment_file" "dns1_cloud_config" {
-  depends_on  = [resource.local_file.dns1_snippet]
+resource "proxmox_virtual_environment_file" "dns_cloud_config" {
+  count = var.dns_count
+  depends_on  = [resource.local_file.dns_snippet]
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = var.dns1_target
+  node_name    = var.dns_target_nodes[count.index]
   source_file {
-    path = resource.local_file.dns1_snippet.filename
+    path = resource.local_file.dns_snippet[count.index].filename
   }
 }
 
-resource "proxmox_virtual_environment_vm" "dns1" {
-  vm_id        = 101
-  name        = "dns1"
-  node_name   = var.dns1_target
+resource "proxmox_virtual_environment_vm" "dns" {
+  count       = var.dns_count
+  # vm_id       = 101
+  name        = "dns${count.index+1}"
+  node_name   = var.dns_target_nodes[count.index]
   description = "Managed by Terraform"
   tags        = ["terraform", "ubuntu"]
   started = true
@@ -162,7 +157,7 @@ resource "proxmox_virtual_environment_vm" "dns1" {
   }
   disk {
     datastore_id = "local-lvm"
-    import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image_2.id
+    import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image[1].id
     interface    = "scsi0"
     discard      = "on"
     size         = 10
@@ -170,102 +165,11 @@ resource "proxmox_virtual_environment_vm" "dns1" {
   
   initialization {
     datastore_id = "local-lvm"
-    user_data_file_id   = proxmox_virtual_environment_file.dns1_cloud_config.id
+    user_data_file_id   = proxmox_virtual_environment_file.dns_cloud_config[count.index].id
 
     ip_config {
       ipv4 {
-        address = "${var.dns1_ip}/24"
-        gateway = var.gateway_ip
-      }
-    }
-    dns {
-      servers = ["9.9.9.9", "1.1.1.1",  "1.0.0.1"]
-    }
-  }
-
-  network_device {
-    bridge = "vmbr0"
-    model = "virtio"
-  }
-
-  agent {
-    enabled = true
-  }
-
-  startup {
-    down_delay = -1
-    order      = -1
-    up_delay   = -1
-  }
-
-  lifecycle {
-    ignore_changes = [
-      startup
-    ]
-  }
-}
-
-#-------------------------------------------------------
-# DNS2
-#-------------------------------------------------------
-variable "dns2_target" {
-  type = string
-  default = "pm3"
-}
-
-resource "local_file" "dns2_snippet" {
-  content = templatefile("${path.module}/cloud-init/templates/dns.tftpl", {
-    hostname           = "dns2"
-    tailscale_auth_key = var.tailscale_auth_key
-    cipassword_hash    = var.cipassword_hash
-    ssh_public_key     = var.ssh_public_key
-  })
-  filename = "${path.module}/cloud-init/tmp/dns2.yml"
-}
-
-resource "proxmox_virtual_environment_file" "dns2_cloud_config" {
-  depends_on  = [resource.local_file.dns2_snippet]
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = var.dns2_target
-  source_file {
-    path = resource.local_file.dns2_snippet.filename
-  }
-}
-
-resource "proxmox_virtual_environment_vm" "dns2" {
-  vm_id        = 102
-  name        = "dns2"
-  node_name   = var.dns2_target
-  description = "Managed by Terraform"
-  tags        = ["terraform", "ubuntu"]
-  started = true
-  on_boot = true
-  reboot_after_update = true
-
-  cpu {
-    cores = 1
-    type  = "host"
-  }
-  memory {
-    dedicated = 2048
-    floating  = 2048 # set equal to dedicated to enable ballooning
-  }
-  disk {
-    datastore_id = "local-lvm"
-    import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image_3.id
-    interface    = "scsi0"
-    discard      = "on"
-    size         = 10
-  }
-  
-  initialization {
-    datastore_id = "local-lvm"
-    user_data_file_id   = proxmox_virtual_environment_file.dns2_cloud_config.id
-
-    ip_config {
-      ipv4 {
-        address = "${var.dns2_ip}/24"
+        address = "${var.dns_ips[count.index]}/24"
         gateway = var.gateway_ip
       }
     }
@@ -348,7 +252,6 @@ resource "proxmox_virtual_environment_vm" "pfs1" {
   
   initialization {
     datastore_id = "local-lvm"
-    user_data_file_id   = proxmox_virtual_environment_file.pfs1_cloud_config.id
 
     ip_config {
       ipv4 {
@@ -357,7 +260,7 @@ resource "proxmox_virtual_environment_vm" "pfs1" {
       }
     }
     dns {
-      servers = [var.dns1_ip, var.dns2_ip]
+      servers = var.dns_ips
     }
   }
 
