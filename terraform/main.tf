@@ -72,6 +72,8 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
 	file_name    = "ubuntu-24.04-minimal-cloudimg-amd64.img.qcow2" # rename to *.qcow2 for import
 	overwrite    = false
 	overwrite_unmanaged = true
+	checksum = "5afe95f6ba186d6e6c7b1582ee34001ac20f609a79b1c68a1c09e5a63f18a460"
+	checksum_algorithm = "sha256"
 }
 
 #-------------------------------------------------------
