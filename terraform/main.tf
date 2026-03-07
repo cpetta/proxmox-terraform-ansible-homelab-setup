@@ -1,5 +1,9 @@
 terraform {
 	required_providers {
+		dns = {
+			source = "hashicorp/dns"
+			version = " ~> 3.5.0"
+		}
 		proxmox = {
 			source  = "bpg/proxmox"
 			version = "0.97.0"
@@ -271,8 +275,8 @@ resource "proxmox_virtual_environment_vm" "pfs1" {
 		ignore_changes = [
 			started,
 			cdrom,
-			ipv4_addresses,
-			ipv6_addresses,
+			# ipv4_addresses,
+			# ipv6_addresses,
 			startup,
 		]
 	}

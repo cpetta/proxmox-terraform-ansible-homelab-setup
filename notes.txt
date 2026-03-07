@@ -98,3 +98,23 @@ https://v.firebog.net/hosts/RPiList-Malware.txt
 https://v.firebog.net/hosts/RPiList-Phishing.txt
 https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts
 https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt
+
+the bpg/proxmox provider does not currently support actions
+https://mikeguy.co.uk/posts/terraform-actions/
+
+Ansible provider
+ansible = {
+	version = "~> 1.4.0"
+	source  = "ansible/ansible"
+}
+
+Ansible API interaction
+https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/uri_module.html#examples
+
+Ansible debug
+- name: Display API response
+  debug:
+    var: token.json
+
+Technitium API documentation
+https://github.com/TechnitiumSoftware/DnsServer/blob/master/APIDOCS.md
