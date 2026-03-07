@@ -71,3 +71,29 @@
     project_src: "{{ technitium_directory }}"
     recreate: always
     
+
+# API setup TSIG
+- name: Acquire API Authentication Token
+  uri:
+    url: "{{ dns_address }}/api/user/login"
+    method: POST
+    body:
+      user: "admin"
+      pass: "{{ dns_config.admin_password }}"
+    body_format: form-urlencoded
+    status_code: 200
+  register: auth
+
+- name: Save Token
+  set_fact:
+    token: "{{ auth.json.token }}"
+
+- name: Add TSIG Key
+  uri:
+    url: "{{ dns_address }}/api/settings/set"
+    body:
+      token: "{{ token }}"
+      tsigKeys: "{{ dns_config.tsigKeys }}"
+    body_format: form-urlencoded
+    method: POST
+    status_code: 200
