@@ -1,4 +1,4 @@
-- hosts: dns
+- hosts: dns_primary
   vars_files:
     - "vars/secrets.yaml"
   vars:
@@ -13,3 +13,21 @@
         - '9.9.9.9'
         - '1.1.1.1'
         - '1.0.0.1'
+    # - role: technitium_create_cluster
+  
+- hosts: dns_secondary
+  vars_files:
+    - "vars/secrets.yaml"
+  vars:
+    ansible_ssh_private_key_file: "{{ ssh_key_path }}"
+  roles:
+    - role: technitium
+      tags: technitium
+
+      resolv_conf_search:
+          - example.org
+      resolv_conf_nameservers:
+        - '9.9.9.9'
+        - '1.1.1.1'
+        - '1.0.0.1'
+    # - role: technitium_join_cluster
