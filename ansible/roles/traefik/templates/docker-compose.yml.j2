@@ -36,8 +36,8 @@ services:
       - "--providers.docker.network=proxy"
 
       # EntryPoints
-      - "--entrypoints.web.address=rp1.chloepetta.net:80"
-      - "--entrypoints.websecure.address=rp1.chloepetta.net:443"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
