@@ -99,14 +99,14 @@
     status_code: 200
 
 
-# API setup home.net
-- name: Add home.net
+# API DNS primary zone setup
+- name: Add {{ dns_zone }}
   uri:
     url: "{{ dns_address }}/api/zones/create"
     body:
       token: "{{ token }}"
-      zone: "home.net"
-      type: "Primary"
+      zone: "{{ dns_zone }}"
+      type: "Primary" 
       useSoaSerialDateScheme: false
     body_format: form-urlencoded
     method: POST
@@ -117,7 +117,7 @@
     url: "{{ dns_address }}/api/zones/options/set"
     body:
       token: "{{ token }}"
-      zone: "home.net"
+      zone: "{{ dns_zone }}"
       overrideCatalogQueryAccess: false
       overrideCatalogZoneTransfer: false
       overrideCatalogNotify: false
