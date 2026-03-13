@@ -1,0 +1,71 @@
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+    environment:
+    - CLOUDFLARE_EMAIL={{ configurations.cloudflare_api_email }}
+    - CF_DNS_API_TOKEN={{ configurations.cloudflare_token }}
+
+    networks:
+      - proxy
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/traefik.yml:ro
+      - ./letsencrypt:/letsencrypt
+      - ./logs:/var/log/traefik
+      - ./dynamic:/etc/traefik/dynamic:ro
+
+    command:
+      # API & Dashboard 
+      - "--api.insecure=false"
+      - "--api.dashboard=true"
+      
+      # Providers 
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=proxy"
+
+      # EntryPoints
+      - "--entrypoints.web.address=rp1.chloepetta.net:80"
+      - "--entrypoints.websecure.address=rp1.chloepetta.net:443"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+      - "--entrypoints.web.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.redirections.entrypoint.permanent=true"
+
+      # Observability 
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--metrics.prometheus=true"
+
+      # Let's Encrypt via cloudflare
+      - "--certificatesresolvers.cloudflare.acme.email={{ configurations.admin_email }}"
+      - "--certificatesresolvers.cloudflare.acme.storage=/letsencrypt/acme.json" # Path inside container volume
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare" # Needs provider setup
+      - "--entrypoints.websecure.tls.certresolver=cloudflare"
+    labels:
+      # Enable self‑routing
+      - "traefik.enable=true"
+
+      # Dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`{{ configurations.dashboard_host }}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=cloudflare"
+networks:
+  proxy:
+    name: proxy
+    # external: true # when commented out, auto-create the network
