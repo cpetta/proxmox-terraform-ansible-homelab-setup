@@ -17,9 +17,11 @@ terraform {
 
 variable "local" {
 	type = bool
-	default = false
+	default = true
 }
 
+variable "dns_zone" {}
+variable "dns_tsig_secret" {}
 variable "cipassword" {}
 variable "cipassword_hash" {}
 variable "ssh_public_key" {}
@@ -33,6 +35,7 @@ variable "gateway_ip" {}
 
 variable "pm_node_list" {}
 variable "dns_server_list" {}
+variable "reverse_proxy_list" {}
 
 variable "pfs1_ip" {}
 
@@ -202,15 +205,10 @@ resource "proxmox_virtual_environment_download_file" "pf_sense_iso_2" {
 	decompression_algorithm = "gz"
 }
 
-variable "pfs1_target" {
-	type = string
-	default = "pm2"
-}
-
 resource "proxmox_virtual_environment_vm" "pfs1" {
 	vm_id        = 110
 	name        = "pfs1"
-	node_name   = var.pfs1_target
+	node_name   = "pm2"
 	description = "Managed by Terraform"
 	tags        = ["terraform"]
 	started = true
@@ -277,6 +275,95 @@ resource "proxmox_virtual_environment_vm" "pfs1" {
 			cdrom,
 			# ipv4_addresses,
 			# ipv6_addresses,
+			startup,
+		]
+	}
+}
+
+#-------------------------------------------------------
+# Reverse Proxy - traefik
+#-------------------------------------------------------
+resource "local_file" "reverse_proxy_snippet" {
+	count = length(var.reverse_proxy_list)
+	content = templatefile("${path.module}/cloud-init/templates/common.tftpl", {
+		hostname           = "rp${count.index+1}"
+		tailscale_auth_key = var.tailscale_auth_key
+		cipassword_hash    = var.cipassword_hash
+		ssh_public_key     = var.ssh_public_key
+	})
+	filename = "${path.module}/cloud-init/tmp/cloud_config_reverse_proxy${count.index+1}.yml"
+}
+
+resource "proxmox_virtual_environment_file" "reverse_proxy_cloud_config" {
+	count = length(var.reverse_proxy_list)
+	depends_on  = [resource.local_file.reverse_proxy_snippet]
+	content_type = "snippets"
+	datastore_id = "local"
+	node_name    = var.reverse_proxy_list[count.index].host_node
+	source_file {
+		path = resource.local_file.reverse_proxy_snippet[count.index].filename
+	}
+}
+
+resource "proxmox_virtual_environment_vm" "reverse_proxy" {
+	count = length(var.reverse_proxy_list)
+	name        = "rp${count.index+1}"
+	node_name   = var.reverse_proxy_list[count.index].host_node
+	description = "Managed by Terraform"
+	tags        = ["terraform"]
+	started = true
+	on_boot = true
+	reboot_after_update = true
+
+	cpu {
+		cores = 1
+		type  = "host"
+	}
+	memory {
+		dedicated = 2048
+		floating  = 2048 # set equal to dedicated to enable ballooning
+	}
+	disk {
+		datastore_id = "local-lvm"
+		import_from  = proxmox_virtual_environment_download_file.ubuntu_cloud_image[1].id
+		interface    = "scsi0"
+		discard      = "on"
+		size         = 10
+	}
+	
+	initialization {
+		datastore_id = "local-lvm"
+		user_data_file_id   = proxmox_virtual_environment_file.reverse_proxy_cloud_config[count.index].id
+
+		ip_config {
+			ipv4 {
+				address = "${var.reverse_proxy_list[count.index].ip_address}/24"
+				gateway = var.gateway_ip
+			}
+		}
+		dns {
+			servers = [for server in var.dns_server_list : server.ip_address]
+		}
+	}
+
+	network_device {
+		bridge = "vmbr0"
+		model = "virtio"
+	}
+
+	agent {
+		enabled = true
+	}
+
+	startup {
+		down_delay = -1
+		order      = -1
+		up_delay   = -1
+	}
+
+	lifecycle {
+		ignore_changes = [
+			started,
 			startup,
 		]
 	}
