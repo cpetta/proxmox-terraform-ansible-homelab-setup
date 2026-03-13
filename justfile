@@ -43,6 +43,9 @@ atest:
 run HOST *TAGS:
 	cd ansible && ansible-playbook -b run.yaml --limit {{HOST}} {{TAGS}}
 
+run_all:
+	cd ansible && ansible-playbook -b run.yaml
+
 update_everything:
 	cd ansible && ansible-playbook -b update_everything.yaml
 
