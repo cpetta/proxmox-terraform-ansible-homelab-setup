@@ -6,31 +6,18 @@ entryPoints:
     address: ":80"
     # middlewares:
       # - crowdsec-bouncer@file
-    # redirections:
-    #   entrypoint:
-    #     to: websecure
-    #     scheme: https
-    #     permanent: true
   websecure:
     address: ":443"
     # http:
     #  middlewares:
     #    - crowdsec-bouncer@file
 providers:
-  docker: {}
-  # docker:
-#     endpoint: "unix:///var/run/docker.sock"
-#     exposedByDefault: false
-#   file:
-#     filename: /config.yml
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+  file:
+    filename: /config.yml
 certificatesResolvers:
-  # le:
-  #   acme:
-  #     caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
-  #     email: "{{ configurations.admin_email }}"
-  #     storage: /letsencrypt/acme.json
-  #     httpChallenge:
-  #       entryPoint: web
   cloudflare:
     acme:
       # caServer: https://acme-v02.api.letsencrypt.org/directory # production
@@ -46,6 +33,6 @@ certificatesResolvers:
 
 log:
   level: "INFO"
-#   filePath: "/var/log/traefik/traefik.log"
-# accessLog:
-#   filePath: "/var/log/traefik/access.log"
+  filePath: "/var/log/traefik/traefik.log"
+accessLog:
+  filePath: "/var/log/traefik/access.log"

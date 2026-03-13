@@ -37,24 +37,6 @@
   vars:
     configurations: "{{ traefik_config }}"
 
-# tls.yml
-# - name: create tls.yml file
-#   template:
-#     src: tls.yml.j2
-#     dest: "{{ traefik_config.directory }}/dynamic/tls.yml"
-#     mode: 0655
-#   vars:
-#     configurations: "{{ traefik_config }}"
-
-# .env
-# - name: create cf-token file
-#   template:
-#     src: .env.j2
-#     dest: "{{ traefik_config.directory }}/.env"
-#     mode: 0655
-#   vars:
-#     configurations: "{{ traefik_config }}"
-
 # traefik.yml
 - name: create traefik.yml file
   template:
