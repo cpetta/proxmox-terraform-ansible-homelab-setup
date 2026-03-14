@@ -1,0 +1,26 @@
+# API DNS primary zone setup
+- name: Acquire API Authentication Token
+  uri:
+    url: "{{ dns_address }}/api/user/login"
+    method: POST
+    body:
+      user: "admin"
+      pass: "{{ dns_config.admin_password }}"
+    body_format: form-urlencoded
+    status_code: 200
+  register: auth
+
+- name: Save Token
+  set_fact:
+    token: "{{ auth.json.token }}"
+
+- name: Create Cluster
+  uri:
+    url: "{{ dns_address }}/api/admin/cluster/init"
+    body:
+      token: "{{ token }}"
+      clusterDomain: "{{ dns_zone }}"
+      primaryNodeIpAddresses: "{{ ansible_host }}"
+    body_format: form-urlencoded
+    method: POST
+    status_code: 200

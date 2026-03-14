@@ -13,7 +13,7 @@
         - '9.9.9.9'
         - '1.1.1.1'
         - '1.0.0.1'
-    # - role: technitium_create_cluster
+    - role: technitium_create_cluster
   
 - hosts: dns_secondary
   vars_files:
