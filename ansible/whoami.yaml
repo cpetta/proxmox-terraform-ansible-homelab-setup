@@ -1,0 +1,23 @@
+- name: "WhoAmI"
+  # hosts: all
+  hosts: dns_secondary
+  remote_user: root
+  vars_files:
+    - "vars/secrets.yaml"
+  vars:
+    ansible_ssh_private_key_file: "{{ ssh_key_path }}"
+  tasks:
+    # - name: Display Host Name
+    #   debug:
+    #     # msg: "{{ hostvars }}"
+    #     msg: "{{ hostvars['ns1'].ansible_host }}"
+    
+    - name: Display Host Name
+      debug:
+        msg: "{{ inventory_hostname }}"
+    - name: Display Short Host Name
+      debug:
+        msg: "{{ inventory_hostname_short }}"
+    - name: Display IP
+      debug:
+        msg: "{{ ansible_host }}"

@@ -37,6 +37,8 @@ dns01 action:
 	cd terraform && tofu {{action}} -target=proxmox_virtual_environment_vm.dns01
 
 ## ansible stuff
+whoami:
+	cd ansible && ansible-playbook -b whoami.yaml
 atest:
 	cd ansible && ansible-playbook -i inventory.yaml all -m ping
 
