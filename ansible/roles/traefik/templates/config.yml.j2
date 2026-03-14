@@ -115,6 +115,12 @@ http:
           - url: https://192.168.0.201:8006
           - url: https://192.168.0.202:8006
           # - url: https://192.168.0.203:8006
+        sticky:
+          cookie:
+            name: proxmox_sticky_session_cookie
+            secure: true
+            httpOnly: true
+
         passHostHeader: true
     pm1:
       loadBalancer:
