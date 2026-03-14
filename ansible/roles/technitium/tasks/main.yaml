@@ -61,16 +61,14 @@
   vars:
     configurations: "{{ dns_config }}"
 
-- name: Remove Docker container
-  community.docker.docker_container:
-    name: "{{ dns_config.container_name }}"
-    state: absent
-
 - name: start container using docker-compose
   community.docker.docker_compose_v2:
     project_src: "{{ technitium_directory }}"
     recreate: always
-    
+
+- name: pause for a second to let the docker container start
+  pause:
+    seconds: 2
 
 # API setup TSIG
 - name: Acquire API Authentication Token
@@ -94,6 +92,7 @@
     body:
       token: "{{ token }}"
       tsigKeys: "{{ dns_config.tsigKeys }}"
+      dnsServerDomain: "{{ inventory_hostname_short }}" # Update host name for clustering
     body_format: form-urlencoded
     method: POST
     status_code: 200
