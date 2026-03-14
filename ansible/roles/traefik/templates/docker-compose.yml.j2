@@ -24,6 +24,7 @@ services:
       - ./letsencrypt:/letsencrypt
       - ./logs:/var/log/traefik
       - ./dynamic:/etc/traefik/dynamic:ro
+      - ./config.yml:/config.yml:ro
 
     command:
       # API & Dashboard 
@@ -53,7 +54,7 @@ services:
       # Let's Encrypt via cloudflare
       - "--certificatesresolvers.cloudflare.acme.email={{ configurations.admin_email }}"
       - "--certificatesresolvers.cloudflare.acme.storage=/letsencrypt/acme.json" # Path inside container volume
-      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare" # Needs provider setup
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare"
       - "--entrypoints.websecure.tls.certresolver=cloudflare"
     labels:
       # Enable self‑routing

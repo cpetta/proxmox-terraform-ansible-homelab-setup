@@ -7,20 +7,40 @@ provider "dns" {
   }
 }
 
+# gateway
+resource "dns_a_record_set" "gateway" {
+  zone = "${var.dns_zone}."
+  name = "gateway"
+  addresses = [
+    var.reverse_proxy_list[0].ip_address,
+  ]
+}
+
+# dns servers
 resource "dns_a_record_set" "dns" {
   count = length(var.dns_server_list)
   zone = "${var.dns_zone}."
   name = "dns${count.index+1}"
   addresses = [
-    var.dns_server_list[count.index].ip_address,
+    var.reverse_proxy_list[0].ip_address,
   ]
 }
 
+# load balanced proxmox
+resource "dns_a_record_set" "pm_lb" {
+  zone = "${var.dns_zone}."
+  name = "pm"
+  addresses = [
+    var.reverse_proxy_list[0].ip_address,
+  ]
+}
+
+# proxmox servers
 resource "dns_a_record_set" "pm" {
   count = length(var.pm_node_list)
   zone = "${var.dns_zone}."
   name = var.pm_node_list[count.index].name
   addresses = [
-    var.pm_node_list[count.index].ip_address,
+    var.reverse_proxy_list[0].ip_address,
   ]
 }

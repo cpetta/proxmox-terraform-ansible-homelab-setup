@@ -7,24 +7,7 @@
     mode: 0775
   with_items:
     - "{{ traefik_config.directory }}"
-    # - "{{ traefik_config.directory }}/certs"
-    - "{{ traefik_config.directory }}/dynamic"
     - "{{ traefik_config.directory }}/letsencrypt"
-
-# Certificate
-# - name: Generate private key (RSA 2048)
-#   community.crypto.openssl_privatekey:
-#     path: "{{ traefik_config.directory }}/certs/local.key"
-#     size: 2048
-#     type: RSA
-
-# - name: Generate self-signed certificate
-#   community.crypto.x509_certificate:
-#     path: "{{ traefik_config.directory }}/certs/local.crt"
-#     privatekey_path: "{{ traefik_config.directory }}/certs/local.key"
-#     provider: selfsigned
-#     selfsigned_not_after: +365d
-
 
 # Install traefik
 
@@ -47,13 +30,13 @@
     configurations: "{{ traefik_config }}"
 
 # config.yml
-# - name: create config.yml file
-#   template:
-#     src: config.yml.j2
-#     dest: "{{ traefik_config.directory }}/config.yml"
-#     mode: 0655
-#   vars:
-#     configurations: "{{ traefik_config }}"
+- name: create config.yml file
+  template:
+    src: config.yml.j2
+    dest: "{{ traefik_config.directory }}/config.yml"
+    mode: 0655
+  vars:
+    configurations: "{{ traefik_config }}"
 
 - name: Remove Docker container
   community.docker.docker_container:

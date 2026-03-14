@@ -6,11 +6,29 @@ entryPoints:
     address: ":80"
     # middlewares:
       # - crowdsec-bouncer@file
+    http:
+      redirections:
+        entrypoint:
+          to: websecure
+          scheme: https
+          permanent: true
   websecure:
     address: ":443"
+    # TODO figure out why wild cards don't work
+    # http:
+      # tls:
+        # domains:
+          # - main: "*.{{ configurations.dns_zone }}"
+          # - main: "{{ configurations.dns_zone }}"
+            # sans:
+              # - "*.{{ configurations.dns_zone }}"
+        # certresolver: "cloudflare"
+
     # http:
     #  middlewares:
     #    - crowdsec-bouncer@file
+serversTransport:
+  insecureSkipVerify: true
 providers:
   docker:
     endpoint: "unix:///var/run/docker.sock"
@@ -20,8 +38,7 @@ providers:
 certificatesResolvers:
   cloudflare:
     acme:
-      # caServer: https://acme-v02.api.letsencrypt.org/directory # production
-      caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
+      caServer: https://acme-v02.api.letsencrypt.org/directory # production
       email: "{{ configurations.admin_email }}"
       storage: /letsencrypt/acme.json
       dnsChallenge:
@@ -31,6 +48,17 @@ certificatesResolvers:
           - "1.1.1.1:53"
           - "1.0.0.1:53"
 
+  staging:
+    acme:
+      caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
+      email: "{{ configurations.admin_email }}"
+      storage: /letsencrypt/acme_staging.json
+      dnsChallenge:
+        provider: cloudflare
+        # disablePropagationCheck: true
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"
 log:
   level: "INFO"
   filePath: "/var/log/traefik/traefik.log"

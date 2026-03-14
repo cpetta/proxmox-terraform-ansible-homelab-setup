@@ -18,20 +18,129 @@ http:
         scheme: https
         permanent: true
 
-  # routers:
-  #   my-service:
-  #     entryPoints:
-  #       - "https"
-  #     rule: "Host(`my-url`)"
-  #     middlewares:
-  #       - default-security-headers
-  #       - https-redirectscheme
-  #     tls: {}
-  #     service: my-service
+  routers:
+    gateway:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`gateway.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: gateway
 
-  # services:
-  #   my-service:
-  #     loadBalancer:
-  #       servers:
-  #         - url: "https://ip:port"
-  #       passHostHeader: true
+
+    pm:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`pm.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: pm
+    pm1:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`pm1.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: pm1
+    pm2:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`pm2.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: pm2
+    pm3:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`pm3.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: pm3
+
+    dns1:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`dns1.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: dns1
+
+    dns2:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`dns2.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: dns2
+
+  services:
+    gateway:
+      loadBalancer:
+        servers:
+          - url: https://192.168.0.1
+        passHostHeader: true
+
+    pm:
+      loadBalancer:
+        servers:
+          - url: https://192.168.0.200:8006
+          - url: https://192.168.0.201:8006
+          - url: https://192.168.0.202:8006
+          # - url: https://192.168.0.203:8006
+        passHostHeader: true
+    pm1:
+      loadBalancer:
+        servers:
+          - url: https://192.168.0.200:8006
+        passHostHeader: true
+
+    pm2:
+      loadBalancer:
+        servers:
+          - url: https://192.168.0.201:8006
+        passHostHeader: true
+
+    pm3:
+      loadBalancer:
+        servers:
+          - url: https://192.168.0.202:8006
+        passHostHeader: true
+
+    dns1:
+      loadBalancer:
+        servers:
+          - url: http://192.168.0.210:5380
+        passHostHeader: true
+    dns2:
+      loadBalancer:
+        servers:
+          - url: http://192.168.0.211:5380
+        passHostHeader: true
