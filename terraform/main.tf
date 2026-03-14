@@ -183,7 +183,8 @@ resource "proxmox_virtual_environment_vm" "dns" {
 
 	lifecycle {
 		ignore_changes = [
-			startup
+			startup,
+			initialization,
 		]
 	}
 }
