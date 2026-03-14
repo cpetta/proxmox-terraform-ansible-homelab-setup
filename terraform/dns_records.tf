@@ -26,6 +26,16 @@ resource "dns_a_record_set" "dns" {
   ]
 }
 
+# Reverse Proxy
+resource "dns_a_record_set" "rp" {
+  count = length(var.reverse_proxy_list)
+  zone = "${var.dns_zone}."
+  name = var.reverse_proxy_list[count.index].name
+  addresses = [
+    var.reverse_proxy_list[count.index].ip_address,
+  ]
+}
+
 # load balanced proxmox
 resource "dns_a_record_set" "pm_lb" {
   zone = "${var.dns_zone}."

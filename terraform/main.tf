@@ -316,7 +316,7 @@ resource "proxmox_virtual_environment_vm" "reverse_proxy" {
 	reboot_after_update = true
 
 	cpu {
-		cores = 1
+		cores = 2
 		type  = "host"
 	}
 	memory {
