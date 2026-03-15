@@ -16,6 +16,15 @@ resource "dns_a_record_set" "gateway" {
   ]
 }
 
+# load balanced dns
+resource "dns_a_record_set" "dns_lb" {
+  zone = "${var.dns_zone}."
+  name = "dns"
+  addresses = [
+    var.reverse_proxy_list[0].ip_address,
+  ]
+}
+
 # dns servers
 resource "dns_a_record_set" "dns" {
   count = length(var.dns_server_list)

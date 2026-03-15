@@ -77,6 +77,17 @@ http:
         certresolver: cloudflare
       service: pm3
 
+    dns:
+      entryPoints:
+       - "web"
+       - "websecure"
+      rule: Host(`dns.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: dns
     dns1:
       entryPoints:
        - "web"
@@ -88,7 +99,6 @@ http:
       tls:
         certresolver: cloudflare
       service: dns1
-
     dns2:
       entryPoints:
        - "web"
@@ -110,6 +120,7 @@ http:
 
     pm:
       loadBalancer:
+        passHostHeader: true
         servers:
           - url: https://192.168.0.200:8006
           - url: https://192.168.0.201:8006
@@ -121,32 +132,41 @@ http:
             secure: true
             httpOnly: true
 
-        passHostHeader: true
     pm1:
       loadBalancer:
         servers:
           - url: https://192.168.0.200:8006
         passHostHeader: true
-
     pm2:
       loadBalancer:
         servers:
           - url: https://192.168.0.201:8006
         passHostHeader: true
-
     pm3:
       loadBalancer:
         servers:
           - url: https://192.168.0.202:8006
         passHostHeader: true
 
+
+    dns:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: https://192.168.0.210:53443
+          - url: https://192.168.0.211:53443
+        sticky:
+          cookie:
+            name: proxmox_sticky_session_cookie
+            secure: true
+            httpOnly: true
     dns1:
       loadBalancer:
         servers:
-          - url: http://192.168.0.210:5380
+          - url: https://192.168.0.210:5380
         passHostHeader: true
     dns2:
       loadBalancer:
         servers:
-          - url: http://192.168.0.211:5380
+          - url: https://192.168.0.211:5380
         passHostHeader: true

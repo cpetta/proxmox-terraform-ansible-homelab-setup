@@ -38,11 +38,6 @@
   vars:
     configurations: "{{ traefik_config }}"
 
-- name: Remove Docker container
-  community.docker.docker_container:
-    name: "{{ traefik_config.container_name }}"
-    state: absent
-
 - name: start container using docker-compose
   community.docker.docker_compose_v2:
     project_src: "{{ traefik_config.directory }}"
