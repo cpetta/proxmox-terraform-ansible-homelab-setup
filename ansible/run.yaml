@@ -13,6 +13,7 @@
         - '9.9.9.9'
         - '1.1.1.1'
         - '1.0.0.1'
+    - role: technitium_create_primary_zone
     - role: technitium_create_cluster
   
 - hosts: dns_secondary
@@ -30,7 +31,7 @@
         - '9.9.9.9'
         - '1.1.1.1'
         - '1.0.0.1'
-    # - role: technitium_join_cluster
+    - role: technitium_join_cluster
 
 - hosts: reverse_proxy_primary
   vars_files:

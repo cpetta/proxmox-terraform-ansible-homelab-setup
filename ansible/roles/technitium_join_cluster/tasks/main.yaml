@@ -1,0 +1,35 @@
+# API Cluster Joining
+- name: Acquire API Authentication Token
+  uri:
+    url: "{{ dns_address }}/api/user/login"
+    method: POST
+    body:
+      user: "admin"
+      pass: "{{ dns_config.admin_password }}"
+    body_format: form-urlencoded
+    status_code: 200
+  register: auth
+
+- name: Save Token
+  set_fact:
+    token: "{{ auth.json.token }}"
+
+- name: Join Cluster
+  uri:
+    url: "{{ dns_address }}/api/admin/cluster/initJoin"
+    body:
+      token: "{{ token }}"
+      secondaryNodeIpAddresses: "{{ ansible_host }}"
+      primaryNodeUrl: "https://ns1.{{ dns_zone }}:53443"
+      primaryNodeIpAddress: "{{ hostvars['ns1'].ansible_host }}"
+      ignoreCertificateErrors: true
+      primaryNodeUsername: admin
+      primaryNodePassword: "{{ dns_config.admin_password }}"
+    body_format: form-urlencoded
+    method: POST
+    status_code: 200
+  register: response
+
+- name: Display Host Name
+  debug:
+    var: response
