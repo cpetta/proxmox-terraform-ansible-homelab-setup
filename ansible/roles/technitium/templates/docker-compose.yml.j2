@@ -1,7 +1,7 @@
 services:
   dns-server:
     container_name: {{ configurations.container_name }}
-    hostname: dns-server
+    hostname: {{ inventory_hostname_short }}
     image: technitium/dns-server:latest
     # For DHCP deployments, use "host" network mode and remove all the port mappings, including the ports array by commenting them
     # network_mode: "host"
@@ -18,15 +18,15 @@ services:
       # - "8053:8053/tcp" #DNS-over-HTTP service (use with reverse proxy)
       # - "67:67/udp" #DHCP service
     environment:
-      - DNS_SERVER_DOMAIN=dns-server #The primary domain name used by this DNS Server to identify itself.
+      - DNS_SERVER_DOMAIN={{ inventory_hostname_short }} #The primary domain name used by this DNS Server to identify itself.
       - DNS_SERVER_ADMIN_PASSWORD={{ configurations.admin_password }} #DNS web console admin user password.
       # - DNS_SERVER_ADMIN_PASSWORD_FILE=password.txt #The path to a file that contains a plain text password for the DNS web console admin user.
       # - DNS_SERVER_PREFER_IPV6=false #DNS Server will use IPv6 for querying whenever possible with this option enabled.
       - DNS_SERVER_WEB_SERVICE_LOCAL_ADDRESSES=127.0.0.1, 172.17.0.1, 172.18.0.1, {{ ansible_host }} #Comma separated list of network interface IP addresses that you want the web service to listen on for requests. The "172.17.0.1" address is the built-in Docker bridge. The "[::]" is the default value if not>
       - DNS_SERVER_WEB_SERVICE_HTTP_PORT=5380 #The TCP port number for the DNS web console over HTTP protocol.
       - DNS_SERVER_WEB_SERVICE_HTTPS_PORT=53443 #The TCP port number for the DNS web console over HTTPS protocol.
-      - DNS_SERVER_WEB_SERVICE_ENABLE_HTTPS=false #Enables HTTPS for the DNS web console.
-      - DNS_SERVER_WEB_SERVICE_USE_SELF_SIGNED_CERT=false #Enables self signed TLS certificate for the DNS web console.
+      - DNS_SERVER_WEB_SERVICE_ENABLE_HTTPS=true #Enables HTTPS for the DNS web console.
+      - DNS_SERVER_WEB_SERVICE_USE_SELF_SIGNED_CERT=true #Enables self signed TLS certificate for the DNS web console.
       - DNS_SERVER_WEB_SERVICE_TLS_CERTIFICATE_PATH=/etc/dns/tls/cert.pfx #The file path to the TLS certificate for the DNS web console.
       - DNS_SERVER_WEB_SERVICE_TLS_CERTIFICATE_PASSWORD={{ configurations.tls_password }} #The password for the TLS certificate for the DNS web console.
       - DNS_SERVER_WEB_SERVICE_HTTP_TO_TLS_REDIRECT=false #Enables HTTP to HTTPS redirection for the DNS web console.
