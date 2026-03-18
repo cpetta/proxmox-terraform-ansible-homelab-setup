@@ -180,11 +180,11 @@ resource "proxmox_virtual_environment_download_file" "talos_boot_image" {
 #-------------------------------------------------------
 # Talos Control Plain Bootstrap
 #-------------------------------------------------------
-resource "talos_machine_secrets" "k8_bootstrap_node" {}
+resource "talos_machine_secrets" "this" {}
 
 data "talos_client_configuration" "k8_bootstrap_node" {
   cluster_name         = local.k8_cluster_config.name
-  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = [var.k8_control_plain_list[0].ip_address]
 }
 
@@ -192,14 +192,14 @@ data "talos_machine_configuration" "k8_bootstrap_node" {
   cluster_name       = local.k8_cluster_config.name
   machine_type       = "controlplane"
   cluster_endpoint   = local.k8_cluster_config.endpoint
-  machine_secrets    = talos_machine_secrets.k8_bootstrap_node.machine_secrets
+  machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.k8_cluster_config.kubernetes_version
   config_patches = local.talos_config_patches
 }
 
 resource "talos_machine_configuration_apply" "k8_bootstrap_node" {
   depends_on = [ proxmox_virtual_environment_vm.k8cp[0] ]
-  client_configuration        = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.k8_bootstrap_node.machine_configuration
   node                        = var.k8_control_plain_list[0].ip_address
   config_patches = local.talos_config_patches
@@ -208,24 +208,18 @@ resource "talos_machine_configuration_apply" "k8_bootstrap_node" {
 resource "talos_machine_bootstrap" "k8_bootstrap_node" {
   depends_on = [ talos_machine_configuration_apply.k8_bootstrap_node ]
   node                 = var.k8_control_plain_list[0].ip_address
-  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  client_configuration = talos_machine_secrets.this.client_configuration
 }
 
 resource "talos_cluster_kubeconfig" "k8_bootstrap_node" {
   depends_on = [ talos_machine_bootstrap.k8_bootstrap_node ]
-  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  client_configuration = talos_machine_secrets.this.client_configuration
   node                 = var.k8_control_plain_list[0].ip_address
 }
 
 resource "local_file" "kubeconfig" {
 	content = talos_cluster_kubeconfig.k8_bootstrap_node.kubeconfig_raw
 	filename = "${path.module}/../kubeconfig"
-}
-
-data "talos_cluster_health" "this" {
-	client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
-	control_plane_nodes = [ var.k8_control_plain_list[0].ip_address ]
-	endpoints = [ var.k8_control_plain_list[0].ip_address ]
 }
 
 #-------------------------------------------------------
@@ -235,19 +229,19 @@ data "talos_machine_configuration" "workers" {
   cluster_name       = local.k8_cluster_config.name
   machine_type       = "worker"
   cluster_endpoint   = local.k8_cluster_config.endpoint
-  machine_secrets    = talos_machine_secrets.k8_bootstrap_node.machine_secrets
+  machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.k8_cluster_config.kubernetes_version
   config_patches = local.talos_config_patches
 }
 
 data "talos_client_configuration" "workers" {
   cluster_name         = local.k8_cluster_config.name
-  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = [var.k8_worker_node_list[0].ip_address]
 }
 
 resource "talos_machine_configuration_apply" "workers" {
-  client_configuration        = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.workers.machine_configuration
   node                        = var.k8_worker_node_list[0].ip_address
   config_patches = local.talos_config_patches
