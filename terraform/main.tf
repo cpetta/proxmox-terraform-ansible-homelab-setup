@@ -12,6 +12,10 @@ terraform {
 			source  = "hashicorp/local"
 			version = "2.4.0"
 		}
+		talos = {
+			source = "siderolabs/talos"
+			version = "0.11.0-beta.1"
+		}
 	}
 }
 
@@ -36,6 +40,26 @@ variable "gateway_ip" {}
 variable "pm_node_list" {}
 variable "dns_server_list" {}
 variable "reverse_proxy_list" {}
+variable "k8_control_plain_list" {}
+variable "k8_worker_node_list" {}
+
+locals {
+	k8_cluster_config = {
+		kubernetes_version = "1.35.2"
+		name = "Chloes_Cluster"
+		endpoint = "https://${var.k8_control_plain_list[0].ip_address}:6443"
+	}
+	talos_config_patches = [
+    yamlencode({
+      machine = {
+        install = {
+          disk = "/dev/sda"
+		  image = "ghcr.io/siderolabs/installer:v1.12.5"
+        }
+      }
+    })
+  ]
+}
 
 variable "pfs1_ip" {}
 
@@ -67,6 +91,10 @@ provider "proxmox" {
 	}
 }
 
+provider "talos" {
+	
+}
+
 #-------------------------------------------------------
 # Cloud Image Resources
 #-------------------------------------------------------
@@ -84,7 +112,7 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
 }
 
 #-------------------------------------------------------
-# Testing VM
+# Testing VM Image
 #-------------------------------------------------------
 // Reference https://atxfiles.netgate.com/mirror/downloads/
 resource "proxmox_virtual_environment_download_file" "mint_iso_1" {
@@ -97,6 +125,132 @@ resource "proxmox_virtual_environment_download_file" "mint_iso_1" {
 	overwrite_unmanaged = true
 	checksum = "45a835b5dddaf40e84d776549e0b19b3fbd49673b6cc6434ebddbfcd217df776"
 	checksum_algorithm = "sha256"
+}
+
+#-------------------------------------------------------
+# Talos Linux Kubernetes Image
+#-------------------------------------------------------
+data "talos_image_factory_versions" "this" {
+	filters = {
+		stable_versions_only = true
+	}
+}
+
+locals {
+	talos_version_latest = element(data.talos_image_factory_versions.this.talos_versions, length(data.talos_image_factory_versions.this.talos_versions) - 1)
+}
+
+data "talos_image_factory_extensions_versions" "this" {
+	talos_version = local.talos_version_latest
+	filters = {
+	names = [
+		"qemu",
+		# "tailscale",
+	]
+  }
+}
+
+resource "talos_image_factory_schematic" "this" {
+	schematic = yamlencode({
+		customization = {
+			systemExtensions = {
+				officialExtensions = data.talos_image_factory_extensions_versions.this.extensions_info.*.name
+			}
+		}
+	})
+}
+
+data "talos_image_factory_urls" "this" {
+  talos_version = local.talos_version_latest
+  schematic_id  = talos_image_factory_schematic.this.id
+  platform      = "nocloud" #   platform      = "metal"
+}
+
+resource "proxmox_virtual_environment_download_file" "talos_boot_image" {
+	content_type = "iso"
+	datastore_id = "local"
+	node_name    = "pm3"
+	url = data.talos_image_factory_urls.this.urls.disk_image
+	file_name = "talos-${local.talos_version_latest}-nocloud-amd64.iso"
+	decompression_algorithm = "zst"
+	overwrite    = false
+	overwrite_unmanaged = true
+}
+
+#-------------------------------------------------------
+# Talos Control Plain Bootstrap
+#-------------------------------------------------------
+resource "talos_machine_secrets" "k8_bootstrap_node" {}
+
+data "talos_client_configuration" "k8_bootstrap_node" {
+  cluster_name         = local.k8_cluster_config.name
+  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  endpoints            = [var.k8_control_plain_list[0].ip_address]
+}
+
+data "talos_machine_configuration" "k8_bootstrap_node" {
+  cluster_name       = local.k8_cluster_config.name
+  machine_type       = "controlplane"
+  cluster_endpoint   = local.k8_cluster_config.endpoint
+  machine_secrets    = talos_machine_secrets.k8_bootstrap_node.machine_secrets
+  kubernetes_version = local.k8_cluster_config.kubernetes_version
+  config_patches = local.talos_config_patches
+}
+
+resource "talos_machine_configuration_apply" "k8_bootstrap_node" {
+  depends_on = [ proxmox_virtual_environment_vm.k8cp[0] ]
+  client_configuration        = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  machine_configuration_input = data.talos_machine_configuration.k8_bootstrap_node.machine_configuration
+  node                        = var.k8_control_plain_list[0].ip_address
+  config_patches = local.talos_config_patches
+}
+
+resource "talos_machine_bootstrap" "k8_bootstrap_node" {
+  depends_on = [ talos_machine_configuration_apply.k8_bootstrap_node ]
+  node                 = var.k8_control_plain_list[0].ip_address
+  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+}
+
+resource "talos_cluster_kubeconfig" "k8_bootstrap_node" {
+  depends_on = [ talos_machine_bootstrap.k8_bootstrap_node ]
+  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  node                 = var.k8_control_plain_list[0].ip_address
+}
+
+resource "local_file" "kubeconfig" {
+	content = talos_cluster_kubeconfig.k8_bootstrap_node.kubeconfig_raw
+	filename = "${path.module}/../kubeconfig"
+}
+
+data "talos_cluster_health" "this" {
+	client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+	control_plane_nodes = [ var.k8_control_plain_list[0].ip_address ]
+	endpoints = [ var.k8_control_plain_list[0].ip_address ]
+}
+
+#-------------------------------------------------------
+# Talos Worker nodes
+#-------------------------------------------------------
+data "talos_machine_configuration" "workers" {
+  cluster_name       = local.k8_cluster_config.name
+  machine_type       = "worker"
+  cluster_endpoint   = local.k8_cluster_config.endpoint
+  machine_secrets    = talos_machine_secrets.k8_bootstrap_node.machine_secrets
+  kubernetes_version = local.k8_cluster_config.kubernetes_version
+  config_patches = local.talos_config_patches
+}
+
+data "talos_client_configuration" "workers" {
+  cluster_name         = local.k8_cluster_config.name
+  client_configuration = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  endpoints            = [var.k8_worker_node_list[0].ip_address]
+}
+
+resource "talos_machine_configuration_apply" "workers" {
+  client_configuration        = talos_machine_secrets.k8_bootstrap_node.client_configuration
+  machine_configuration_input = data.talos_machine_configuration.workers.machine_configuration
+  node                        = var.k8_worker_node_list[0].ip_address
+  config_patches = local.talos_config_patches
 }
 
 #-------------------------------------------------------
@@ -365,6 +519,182 @@ resource "proxmox_virtual_environment_vm" "reverse_proxy" {
 	lifecycle {
 		ignore_changes = [
 			started,
+			startup,
+		]
+	}
+}
+
+#-------------------------------------------------------
+# Talos Linux Kubernetes Control Plain Nodes
+#-------------------------------------------------------
+resource "local_file" "k8cp_snippet" {
+	count = length(var.k8_control_plain_list)
+	content = templatefile("${path.module}/cloud-init/templates/talos.tftpl", {
+		hostname           = var.k8_control_plain_list[count.index].name
+		mac_address        = ""
+	})
+	filename = "${path.module}/cloud-init/tmp/cloud_config_k8cp-${count.index+1}.yml"
+}
+
+resource "proxmox_virtual_environment_file" "k8cp_cloud_config" {
+	count = length(var.k8_control_plain_list)
+	depends_on  = [resource.local_file.k8cp_snippet]
+	content_type = "snippets"
+	datastore_id = "local"
+	node_name    = var.k8_control_plain_list[count.index].host_node
+	source_file {
+		path = resource.local_file.k8cp_snippet[count.index].filename
+	}
+}
+
+resource "proxmox_virtual_environment_vm" "k8cp" {
+	count = length(var.k8_control_plain_list)
+	name        = var.k8_control_plain_list[count.index].name
+	node_name   = var.k8_control_plain_list[count.index].host_node
+	description = "Managed by Terraform"
+	tags        = ["terraform"]
+	started = true
+	on_boot = true
+	reboot_after_update = true
+
+	cpu {
+		cores = 4
+		type  = "host"
+	}
+	memory {
+		dedicated = 4096
+		floating  = 4096 # set equal to dedicated to enable ballooning
+	}
+	disk {
+		datastore_id = "local-lvm"
+		file_format  = "raw"
+		file_id      = proxmox_virtual_environment_download_file.talos_boot_image.id
+		interface    = "scsi0"
+		discard      = "on"
+		size         = 20
+	}
+	
+	initialization {
+		datastore_id = "local-lvm"
+		user_data_file_id   = proxmox_virtual_environment_file.k8cp_cloud_config[count.index].id
+
+		ip_config {
+			ipv4 {
+				address = "${var.k8_control_plain_list[count.index].ip_address}/24"
+				gateway = var.gateway_ip
+			}
+		}
+		dns {
+			servers = [for server in var.dns_server_list : server.ip_address]
+		}
+	}
+
+	network_device {
+		bridge = "vmbr0"
+		model = "virtio"
+	}
+
+	agent {
+		enabled = true
+	}
+
+	startup {
+		down_delay = -1
+		order      = -1
+		up_delay   = -1
+	}
+
+	lifecycle {
+		ignore_changes = [
+			# started,
+			startup,
+		]
+	}
+}
+
+#-------------------------------------------------------
+# Talos Linux Kubernetes Worker Nodes
+#-------------------------------------------------------
+resource "local_file" "k8w_snippet" {
+	count = length(var.k8_worker_node_list)
+	content = templatefile("${path.module}/cloud-init/templates/talos.tftpl", {
+		hostname           = var.k8_worker_node_list[count.index].name
+		mac_address        = ""
+	})
+	filename = "${path.module}/cloud-init/tmp/cloud_config_k8w-${count.index+1}.yml"
+}
+
+resource "proxmox_virtual_environment_file" "k8w_cloud_config" {
+	count = length(var.k8_worker_node_list)
+	depends_on  = [resource.local_file.k8w_snippet]
+	content_type = "snippets"
+	datastore_id = "local"
+	node_name    = var.k8_worker_node_list[count.index].host_node
+	source_file {
+		path = resource.local_file.k8w_snippet[count.index].filename
+	}
+}
+
+resource "proxmox_virtual_environment_vm" "k8w" {
+	count = length(var.k8_worker_node_list)
+	name        = var.k8_worker_node_list[count.index].name
+	node_name   = var.k8_worker_node_list[count.index].host_node
+	description = "Managed by Terraform"
+	tags        = ["terraform"]
+	started = true
+	on_boot = true
+	reboot_after_update = true
+
+	cpu {
+		cores = 2
+		type  = "host"
+	}
+	memory {
+		dedicated = 2048
+		floating  = 2048 # set equal to dedicated to enable ballooning
+	}
+	disk {
+		datastore_id = "local-lvm"
+		file_format  = "raw"
+		file_id      = proxmox_virtual_environment_download_file.talos_boot_image.id
+		interface    = "scsi0"
+		discard      = "on"
+		size         = 20
+	}
+	
+	initialization {
+		datastore_id = "local-lvm"
+		user_data_file_id   = proxmox_virtual_environment_file.k8w_cloud_config[count.index].id
+
+		ip_config {
+			ipv4 {
+				address = "${var.k8_worker_node_list[count.index].ip_address}/24"
+				gateway = var.gateway_ip
+			}
+		}
+		dns {
+			servers = [for server in var.dns_server_list : server.ip_address]
+		}
+	}
+
+	network_device {
+		bridge = "vmbr0"
+		model = "virtio"
+	}
+
+	agent {
+		enabled = true
+	}
+
+	startup {
+		down_delay = -1
+		order      = -1
+		up_delay   = -1
+	}
+
+	lifecycle {
+		ignore_changes = [
+			# started,
 			startup,
 		]
 	}

@@ -1,0 +1,98 @@
+---
+# Disable conflicting DNS resolver
+- name: Disable systemd-resolved
+  when: ansible_service_mgr == "systemd"
+  block:
+    - name: Check if systemd-resolved service exists
+      ansible.builtin.stat:
+        path: /lib/systemd/system/systemd-resolved.service
+      register: systemd_resolved_service
+
+    - name: Disable systemd-resolved service
+      ansible.builtin.service:
+        name: systemd-resolved
+        enabled: false
+        state: stopped
+        # Needed to force SysV service manager on Docker for Molecule tests
+        use: "{{ ansible_service_mgr }}"
+      become: true
+      when: systemd_resolved_service.stat.exists
+
+    - name: Check if resolv.conf is pointing to systemd-resolved
+      ansible.builtin.stat:
+        path: /etc/resolv.conf
+      register: resolv_dot_conf
+
+    - name: Configure resolv.conf
+      when:
+        - resolv_dot_conf.stat.exists
+        - resolv_dot_conf.stat.islnk
+        - resolv_dot_conf.stat.lnk_source == "/run/systemd/resolve/stub-resolv.conf"
+      become: true
+      block:
+        - name: Remove resolv.conf association with systemd-resolved
+          ansible.builtin.file:
+            path: /etc/resolv.conf
+            state: absent
+
+# Fix for DNS on Ubuntu Minimal
+- name: Create /etc/resolv.conf from template.
+  ansible.builtin.template:
+    dest: /etc/resolv.conf
+    src: resolv.conf.j2
+    mode: '0644'
+    owner: root
+    group: root
+
+# install technitium
+- name: create directory structure for technitium
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0775
+  with_items:
+    - "{{ technitium_directory }}"
+
+- name: create docker-compose file to run container
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ technitium_directory }}/docker-compose.yml"
+    mode: 0655
+  vars:
+    configurations: "{{ dns_config }}"
+
+- name: start container using docker-compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ technitium_directory }}"
+    recreate: always
+
+- name: pause for a second to let the docker container start
+  pause:
+    seconds: 2
+
+# API setup TSIG
+- name: Acquire API Authentication Token
+  uri:
+    url: "{{ dns_address }}/api/user/login"
+    method: POST
+    body:
+      user: "admin"
+      pass: "{{ dns_config.admin_password }}"
+    body_format: form-urlencoded
+    status_code: 200
+  register: auth
+
+- name: Save Token
+  set_fact:
+    token: "{{ auth.json.token }}"
+
+- name: Add TSIG Key
+  uri:
+    url: "{{ dns_address }}/api/settings/set"
+    body:
+      token: "{{ token }}"
+      tsigKeys: "{{ dns_config.tsigKeys }}"
+      dnsServerDomain: "{{ inventory_hostname_short }}" # Update host name for clustering
+    body_format: form-urlencoded
+    method: POST
+    status_code: 200

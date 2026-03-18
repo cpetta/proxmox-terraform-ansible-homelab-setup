@@ -118,3 +118,62 @@ Ansible debug
 
 Technitium API documentation
 https://github.com/TechnitiumSoftware/DnsServer/blob/master/APIDOCS.md
+
+
+References:
+https://docs.siderolabs.com/talos/v1.12/getting-started/getting-started
+https://github.com/bpg/terraform-provider-proxmox/issues/2436
+
+Talos linux boot process
+https://github.com/bpg/terraform-provider-proxmox/issues/2436
+
+Talos control install script
+curl -sL https://talos.dev/install | sh
+
+Talos list disks
+talosctl get disks --insecure --nodes $CONTROL_PLANE_IP
+
+Talos variables
+export CONTROL_PLANE_IP=192.168.0.220
+export CLUSTER_NAME="Chloes_k8_Cluster"
+export DISK_NAME="sda"
+#export WORKER_IP=("<worker-ip-1>" "<worker-ip-2>" "<worker-ip-3>"...)
+
+Generate Talos Install Script
+talosctl gen config $CLUSTER_NAME https://$CONTROL_PLANE_IP:6443 --install-disk /dev/$DISK_NAME
+
+Apply to control plain
+talosctl apply-config --insecure --nodes $CONTROL_PLANE_IP --file controlplane.yaml
+
+Apply any worker nodes
+for ip in "${WORKER_IP[@]}"; do
+    echo "Applying config to worker node: $ip"
+    talosctl apply-config --insecure --nodes "$ip" --file worker.yaml
+done
+
+Set endpoints
+talosctl --talosconfig=./talosconfig config endpoints $CONTROL_PLANE_IP
+
+After control plane finishs booting: bootstrap your etcd cluster:
+talosctl bootstrap --nodes $CONTROL_PLANE_IP --talosconfig=./talosconfig
+
+Get Kubernetes access
+# talosctl kubeconfig --nodes $CONTROL_PLANE_IP --talosconfig=./talosconfig
+talosctl kubeconfig alternative-kubeconfig --nodes $CONTROL_PLANE_IP --talosconfig=./talosconfig
+export KUBECONFIG=./alternative-kubeconfig
+
+Check cluster health
+talosctl --nodes $CONTROL_PLANE_IP --talosconfig=./talosconfig health
+
+Verify node registration
+ kubectl get nodes --kubeconfig alternative-kubeconfig 
+
+
+Install KubeCTL (Added package manager method to just file)
+https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+kubectl version --client

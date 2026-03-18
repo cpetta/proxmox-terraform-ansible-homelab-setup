@@ -60,6 +60,9 @@ terraform.rc
 .history
 .ionide
 
+# Kubernetes
+kubeconfig
+
 secrets.yaml
 terraform/.terraform.lock.hcl
 terraform/cloud-init/tmp/*
