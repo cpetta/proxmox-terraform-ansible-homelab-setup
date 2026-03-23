@@ -10,8 +10,15 @@ install:
 	./install-opentofu.sh --install-method deb
 	rm -f install-opentofu.sh
 
+	sudo apt-get install pipx
+	sudo pipx install checkov
+	pipx ensurepath
+
 update:
 	sudo apt-get update && sudo apt-get upgrade
+
+check:
+	checkov -d ./
 
 ## terraform/tofu stuff
 init:
