@@ -54,7 +54,8 @@ locals {
       machine = {
         install = {
           disk = "/dev/sda"
-		  image = "ghcr.io/siderolabs/installer:v1.12.5"
+		#   image = "ghcr.io/siderolabs/installer:v1.12.5"
+		    image = data.talos_image_factory_urls.this.urls.installer
         }
       }
     })
@@ -170,6 +171,7 @@ resource "proxmox_virtual_environment_download_file" "talos_boot_image" {
 	content_type = "iso"
 	datastore_id = "local"
 	node_name    = "pm3"
+	# url = data.talos_image_factory_urls.this.urls.disk_image_secureboot
 	url = data.talos_image_factory_urls.this.urls.disk_image
 	file_name = "talos-${local.talos_version_latest}-nocloud-amd64.iso"
 	decompression_algorithm = "zst"
@@ -550,14 +552,21 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
 	started = true
 	on_boot = true
 	reboot_after_update = true
+	bios = "ovmf"
+	machine = "q35,viommu=virtio"
 
 	cpu {
-		cores = 4
+		cores = 2
 		type  = "host"
 	}
+	rng {
+		max_bytes = 1024
+		period    = 1000
+		source    = "/dev/urandom"
+	}
 	memory {
-		dedicated = 4096
-		floating  = 4096 # set equal to dedicated to enable ballooning
+		dedicated = 2048
+		floating  = 0
 	}
 	disk {
 		datastore_id = "local-lvm"
@@ -566,6 +575,16 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
 		interface    = "scsi0"
 		discard      = "on"
 		size         = 20
+	}
+	efi_disk {
+		datastore_id      = "local-lvm"
+		file_format       = "raw"
+		pre_enrolled_keys = false
+		type              = "4m"
+	}
+	tpm_state {
+		datastore_id      = "local-lvm"
+		version			  = "v2.0"
 	}
 	
 	initialization {
@@ -638,10 +657,17 @@ resource "proxmox_virtual_environment_vm" "k8w" {
 	started = true
 	on_boot = true
 	reboot_after_update = true
+	bios = "ovmf"
+	machine = "q35,viommu=virtio"
 
 	cpu {
 		cores = 2
 		type  = "host"
+	}
+	rng {
+		max_bytes = 1024
+		period    = 1000
+		source    = "/dev/urandom"
 	}
 	memory {
 		dedicated = 2048
@@ -654,6 +680,12 @@ resource "proxmox_virtual_environment_vm" "k8w" {
 		interface    = "scsi0"
 		discard      = "on"
 		size         = 20
+	}
+	efi_disk {
+		datastore_id      = "local-lvm"
+		file_format       = "raw"
+		pre_enrolled_keys = false
+		type              = "4m"
 	}
 	
 	initialization {

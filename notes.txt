@@ -168,6 +168,14 @@ talosctl --nodes $CONTROL_PLANE_IP --talosconfig=./talosconfig health
 Verify node registration
  kubectl get nodes --kubeconfig alternative-kubeconfig 
 
+Update a talos node
+talosctl upgrade --nodes <ip>
+
+Attempt to enable Secure boot on Talos VM
+( Left off at first boot not enrolling keys )
+https://github.com/siderolabs/talos/issues/11010
+https://forum.proxmox.com/threads/enroll-custom-secureboot-keys.151443/
+https://docs.siderolabs.com/talos/v1.10/platform-specific-installations/bare-metal-platforms/secureboot
 
 Install KubeCTL (Added package manager method to just file)
 https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
