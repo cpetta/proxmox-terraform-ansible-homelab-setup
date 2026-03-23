@@ -1,7 +1,7 @@
 # API Cluster Joining
 - name: Acquire API Authentication Token
   uri:
-    url: "{{ dns_address }}/api/user/login"
+    url: "https://localhost:53443/api/user/login"
     method: POST
     body:
       user: "admin"
@@ -16,7 +16,7 @@
 
 - name: Join Cluster
   uri:
-    url: "{{ dns_address }}/api/admin/cluster/initJoin"
+    url: "https://localhost:53443/api/admin/cluster/initJoin"
     body:
       token: "{{ token }}"
       secondaryNodeIpAddresses: "{{ ansible_host }}"

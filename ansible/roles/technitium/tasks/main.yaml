@@ -73,7 +73,7 @@
 # API setup TSIG
 - name: Acquire API Authentication Token
   uri:
-    url: "{{ dns_address }}/api/user/login"
+    url: "https://localhost:53443/api/user/login"
     method: POST
     body:
       user: "admin"
@@ -88,7 +88,7 @@
 
 - name: Add TSIG Key
   uri:
-    url: "{{ dns_address }}/api/settings/set"
+    url: "https://localhost:53443/api/settings/set"
     body:
       token: "{{ token }}"
       tsigKeys: "{{ dns_config.tsigKeys }}"

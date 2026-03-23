@@ -2,7 +2,7 @@
 # API DNS primary zone setup
 - name: Add {{ dns_zone }}
   uri:
-    url: "{{ dns_address }}/api/zones/create"
+    url: "https://localhost:53443/api/zones/create"
     body:
       token: "{{ token }}"
       zone: "{{ dns_zone }}"
@@ -14,7 +14,7 @@
 
 - name: Set Dynamic Updates (RFC 2136) to Allow
   uri:
-    url: "{{ dns_address }}/api/zones/options/set"
+    url: "https://localhost:53443/api/zones/options/set"
     body:
       token: "{{ token }}"
       zone: "{{ dns_zone }}"

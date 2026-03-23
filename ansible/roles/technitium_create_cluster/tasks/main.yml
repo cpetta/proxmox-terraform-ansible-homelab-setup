@@ -1,7 +1,7 @@
 # API DNS primary zone setup
 - name: Acquire API Authentication Token
   uri:
-    url: "{{ dns_address }}/api/user/login"
+    url: "https://localhost:53443/api/user/login"
     method: POST
     body:
       user: "admin"
@@ -16,7 +16,7 @@
 
 - name: Create Cluster
   uri:
-    url: "{{ dns_address }}/api/admin/cluster/init"
+    url: "https://localhost:53443/api/admin/cluster/init"
     body:
       token: "{{ token }}"
       clusterDomain: "{{ dns_zone }}"
