@@ -224,6 +224,11 @@ resource "local_file" "kubeconfig" {
 	filename = "${path.module}/../kubeconfig"
 }
 
+resource "local_file" "kubeconfig" {
+	content = talos_cluster_kubeconfig.k8_bootstrap_node.kubeconfig_raw
+	filename = "~/.kube/config"
+}
+
 #-------------------------------------------------------
 # Talos Worker nodes
 #-------------------------------------------------------
