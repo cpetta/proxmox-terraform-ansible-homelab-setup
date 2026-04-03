@@ -28,8 +28,8 @@ resource "dns_a_record_set" "dns_lb" {
 # dns servers
 resource "dns_a_record_set" "dns" {
   count = length(var.dns_server_list)
-  zone = "${var.dns_zone}."
-  name = "dns${count.index+1}"
+  zone  = "${var.dns_zone}."
+  name  = "dns${count.index + 1}"
   addresses = [
     var.reverse_proxy_list[0].ip_address,
   ]
@@ -38,8 +38,8 @@ resource "dns_a_record_set" "dns" {
 # Reverse Proxy
 resource "dns_a_record_set" "rp" {
   count = length(var.reverse_proxy_list)
-  zone = "${var.dns_zone}."
-  name = var.reverse_proxy_list[count.index].name
+  zone  = "${var.dns_zone}."
+  name  = var.reverse_proxy_list[count.index].name
   addresses = [
     var.reverse_proxy_list[count.index].ip_address,
   ]
@@ -57,9 +57,28 @@ resource "dns_a_record_set" "pm_lb" {
 # proxmox servers
 resource "dns_a_record_set" "pm" {
   count = length(var.pm_node_list)
-  zone = "${var.dns_zone}."
-  name = var.pm_node_list[count.index].name
+  zone  = "${var.dns_zone}."
+  name  = var.pm_node_list[count.index].name
   addresses = [
     var.reverse_proxy_list[0].ip_address,
+  ]
+}
+
+# Jellyfin
+resource "dns_a_record_set" "jf" {
+  zone = "${var.dns_zone}."
+  name = "media"
+  addresses = [
+    var.reverse_proxy_list[0].ip_address,
+  ]
+}
+
+
+# Kubernetes cluster
+resource "dns_a_record_set" "k8" {
+  zone = "${var.dns_zone}."
+  name = "k8"
+  addresses = [
+    var.k8_control_plain_list[0].ip_address,
   ]
 }

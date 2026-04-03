@@ -189,4 +189,28 @@ kubectl version --client
 Add kube config to local path so that we don't have to constantly keep specifying --kubeconfig ./kubeconfig
 https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/
 
+
+kubectl label node k8w-1 node-role.kubernetes.io/worker=worker
+
+Kubernetes Hello World
+https://kubernetes.io/docs/tutorials/hello-minikube/
+https://www.youtube.com/watch?v=IafVCHkJbtI
+https://github.com/geerlingguy/turing-pi-cluster
+
 Checkov -d ./
+
+kubectl delete all --all -n longhorn-system
+
+
+Kubernetes Jellyfin
+helm repo add jellyfin https://jellyfin.github.io/jellyfin-helm
+helm repo update
+helm install jellyfin jellyfin/jellyfin -f kubernetes/jellyfin/values.yml
+
+kubectl port-forward svc/jellyfin 8096:8096
+
+installing longhornctl
+https://github.com/longhorn/cli/?tab=readme-ov-file
+curl -L https://github.com/longhorn/cli/releases/download/${LonghornVersion}/longhornctl-${OS}-${ARCH} -o longhornctl
+chmod +x longhornctl
+mv ./longhornctl /usr/local/bin/longhornctl

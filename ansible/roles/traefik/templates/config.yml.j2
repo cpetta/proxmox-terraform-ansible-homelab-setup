@@ -111,6 +111,19 @@ http:
         certresolver: cloudflare
       service: dns2
 
+    jellyfin:
+      entryPoints:
+      - "web"
+      - "websecure"
+      rule: Host(`media.{{ configurations.dns_zone }}`)
+      middlewares:
+        # - default-security-headers
+        - https-redirectscheme
+      tls:
+        certresolver: cloudflare
+      service: jellyfin
+  
+  
   services:
     gateway:
       loadBalancer:
@@ -128,7 +141,7 @@ http:
           # - url: https://192.168.0.203:8006
         sticky:
           cookie:
-            name: proxmox_sticky_session_cookie
+            name: sticky_cookie
             secure: true
             httpOnly: true
 
@@ -157,7 +170,7 @@ http:
           - url: https://192.168.0.211:53443
         sticky:
           cookie:
-            name: proxmox_sticky_session_cookie
+            name: sticky_cookie
             secure: true
             httpOnly: true
     dns1:
@@ -170,3 +183,14 @@ http:
         servers:
           - url: https://192.168.0.211:5380
         passHostHeader: true
+
+    jellyfin:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: http://192.168.0.30:8096
+        sticky:
+          cookie:
+            name: sticky_cookie
+            secure: true
+            httpOnly: true

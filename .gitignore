@@ -68,3 +68,6 @@ terraform/.terraform.lock.hcl
 terraform/cloud-init/tmp/*
 
 secret_notes.txt
+
+# Helm
+*/helm/tmp/*

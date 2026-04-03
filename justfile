@@ -14,6 +14,12 @@ install:
 	sudo pipx install checkov
 	pipx ensurepath
 
+	sudo apt-get install curl gpg apt-transport-https --yes
+	curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+	echo "deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+	sudo apt-get update
+	sudo apt-get install helm
+
 update:
 	sudo apt-get update && sudo apt-get upgrade
 
@@ -71,7 +77,7 @@ vault ACTION:
 	cd ansible && EDITOR='code --wait' ansible-vault {{ACTION}} vars/secrets.yaml
 
 # Kubernetes Stuff
-install_k:
+kinstall:
 	sudo apt-get update
 	sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
 	curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.35/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -80,3 +86,6 @@ install_k:
 	sudo chmod 644 /etc/apt/sources.list.d/kubernetes.list
 	sudo apt-get update
 	sudo apt-get install -y kubectl
+
+kconfig:
+	cp ./kubeconfig ~/.kube/config
