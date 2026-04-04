@@ -45,6 +45,16 @@ resource "dns_a_record_set" "rp" {
   ]
 }
 
+# Kubernetes Resources
+resource "dns_a_record_set" "k8_services" {
+  for_each = var.k8_service_list
+  zone     = "${var.dns_zone}."
+  name     = each.key
+  addresses = [
+    each.value,
+  ]
+}
+
 # load balanced proxmox
 resource "dns_a_record_set" "pm_lb" {
   zone = "${var.dns_zone}."

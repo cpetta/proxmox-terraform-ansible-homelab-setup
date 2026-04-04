@@ -46,6 +46,7 @@ variable "local" {
 variable "dns_zone" {}
 variable "dns_tsig_secret" {}
 variable "cipassword" {}
+variable "traefik_password" {}
 variable "cipassword_hash" {}
 variable "ssh_public_key" {}
 variable "pm_api_token" {}
@@ -60,8 +61,8 @@ variable "pm_node_list" {}
 variable "dns_server_list" {}
 variable "reverse_proxy_list" {}
 variable "k8_control_plain_list" {}
-variable "k8_worker_node_list" {}
 variable "k8_storage_node_list" {}
+variable "k8_service_list" {}
 
 
 locals {
@@ -233,14 +234,14 @@ resource "talos_image_factory_schematic" "this" {
 data "talos_image_factory_urls" "this" {
   talos_version = local.talos_version_latest
   schematic_id  = talos_image_factory_schematic.this.id
-  platform      = "nocloud" #   platform      = "metal"
+  platform      = "nocloud"
 }
 
 resource "proxmox_virtual_environment_download_file" "talos_boot_image" {
-  count                   = length(var.pm_node_list)
+  for_each                = toset(distinct(var.k8_control_plain_list[*].host_node))
   content_type            = "iso"
   datastore_id            = "local"
-  node_name               = var.pm_node_list[count.index].name
+  node_name               = each.value
   url                     = data.talos_image_factory_urls.this.urls.disk_image
   file_name               = "talos-${local.talos_version_latest}-nocloud-amd64.iso"
   decompression_algorithm = "zst"
@@ -252,8 +253,9 @@ resource "proxmox_virtual_environment_download_file" "talos_boot_image" {
 # Talos Storage Image
 #-------------------------------------------------------
 locals {
-  storage_host_list = distinct(var.k8_storage_node_list[*].host_node)
+  storage_host_list = toset(distinct(var.k8_storage_node_list[*].host_node))
 }
+
 data "talos_image_factory_extensions_versions" "storage" {
   talos_version = local.talos_version_latest
   filters = {
@@ -282,10 +284,10 @@ data "talos_image_factory_urls" "storage" {
 }
 
 resource "proxmox_virtual_environment_download_file" "talos_boot_image_storage" {
-  count                   = length(local.storage_host_list)
+  for_each                = local.storage_host_list
   content_type            = "iso"
   datastore_id            = "local"
-  node_name               = local.storage_host_list[count.index]
+  node_name               = each.value
   url                     = data.talos_image_factory_urls.storage.urls.disk_image
   file_name               = "talos-${local.talos_version_latest}-nocloud-amd64-storage.iso"
   decompression_algorithm = "zst"
@@ -339,34 +341,34 @@ resource "local_file" "kubeconfig" {
 }
 
 #-------------------------------------------------------
-# Talos Worker nodes
+# Talos Control Plain Nodes
 #-------------------------------------------------------
-data "talos_machine_configuration" "workers" {
+data "talos_machine_configuration" "controlplane" {
   cluster_name       = local.k8_cluster_config.name
-  machine_type       = "worker"
+  machine_type       = "controlplane"
   cluster_endpoint   = local.k8_cluster_config.endpoint
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.k8_cluster_config.kubernetes_version
 }
 
-data "talos_client_configuration" "workers" {
+data "talos_client_configuration" "controlplane" {
   cluster_name         = local.k8_cluster_config.name
   client_configuration = talos_machine_secrets.this.client_configuration
-  endpoints            = [var.k8_worker_node_list[0].ip_address]
+  endpoints            = [var.k8_control_plain_list[0].ip_address]
 }
 
-resource "talos_machine_configuration_apply" "workers" {
-  depends_on                  = [proxmox_virtual_environment_vm.k8w]
-  count                       = length(var.k8_worker_node_list)
+resource "talos_machine_configuration_apply" "controlplane" {
+  for_each                    = { for i, v in var.k8_control_plain_list : i => v if i > 0 }
+  depends_on                  = [proxmox_virtual_environment_vm.k8cp]
   client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.workers.machine_configuration
-  node                        = var.k8_worker_node_list[count.index].ip_address
+  machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
+  node                        = each.value.ip_address
   config_patches              = local.talos_default_patch
 }
 
 
 #-------------------------------------------------------
-# Talos Storage nodes
+# Talos Worker Nodes
 #-------------------------------------------------------
 data "talos_machine_configuration" "storage" {
   cluster_name       = local.k8_cluster_config.name
@@ -499,80 +501,80 @@ resource "proxmox_virtual_environment_download_file" "pf_sense_iso_2" {
   decompression_algorithm = "gz"
 }
 
-resource "proxmox_virtual_environment_vm" "pfs1" {
-  vm_id               = 110
-  name                = "pfs1"
-  node_name           = "pm2"
-  description         = "Managed by Terraform"
-  tags                = ["terraform"]
-  started             = true
-  on_boot             = true
-  reboot_after_update = true
+# resource "proxmox_virtual_environment_vm" "pfs1" {
+#   vm_id               = 110
+#   name                = "pfs1"
+#   node_name           = "pm2"
+#   description         = "Managed by Terraform"
+#   tags                = ["terraform"]
+#   started             = true
+#   on_boot             = true
+#   reboot_after_update = true
 
-  cpu {
-    cores = 1
-    type  = "host"
-  }
-  memory {
-    dedicated = 2048
-    floating  = 2048 # set equal to dedicated to enable ballooning
-  }
-  disk {
-    datastore_id = "local-lvm"
-    interface    = "scsi0"
-    discard      = "on"
-    size         = 50
-  }
-  cdrom {
-    file_id = proxmox_virtual_environment_download_file.pf_sense_iso_2.id
-  }
+#   cpu {
+#     cores = 1
+#     type  = "host"
+#   }
+#   memory {
+#     dedicated = 2048
+#     floating  = 2048 # set equal to dedicated to enable ballooning
+#   }
+#   disk {
+#     datastore_id = "local-lvm"
+#     interface    = "scsi0"
+#     discard      = "on"
+#     size         = 50
+#   }
+#   cdrom {
+#     file_id = proxmox_virtual_environment_download_file.pf_sense_iso_2.id
+#   }
 
-  initialization {
-    datastore_id = "local-lvm"
+#   initialization {
+#     datastore_id = "local-lvm"
 
-    ip_config {
-      ipv4 {
-        address = "${var.pfs1_ip}/24"
-        gateway = var.gateway_ip
-      }
-    }
-    dns {
-      servers = [for server in var.dns_server_list : server.ip_address]
-    }
-  }
+#     ip_config {
+#       ipv4 {
+#         address = "${var.pfs1_ip}/24"
+#         gateway = var.gateway_ip
+#       }
+#     }
+#     dns {
+#       servers = [for server in var.dns_server_list : server.ip_address]
+#     }
+#   }
 
-  network_device {
-    bridge = "vmbr0"
-    model  = "virtio"
-  }
+#   network_device {
+#     bridge = "vmbr0"
+#     model  = "virtio"
+#   }
 
-  network_device {
-    bridge   = "vmbr1"
-    model    = "virtio"
-    firewall = false
-    vlan_id  = 100
-  }
+#   network_device {
+#     bridge   = "vmbr1"
+#     model    = "virtio"
+#     firewall = false
+#     vlan_id  = 100
+#   }
 
-  agent {
-    enabled = true
-  }
+#   agent {
+#     enabled = true
+#   }
 
-  startup {
-    down_delay = -1
-    order      = -1
-    up_delay   = -1
-  }
+#   startup {
+#     down_delay = -1
+#     order      = -1
+#     up_delay   = -1
+#   }
 
-  lifecycle {
-    ignore_changes = [
-      started,
-      cdrom,
-      # ipv4_addresses,
-      # ipv6_addresses,
-      startup,
-    ]
-  }
-}
+#   lifecycle {
+#     ignore_changes = [
+#       started,
+#       cdrom,
+#       # ipv4_addresses,
+#       # ipv6_addresses,
+#       startup,
+#     ]
+#   }
+# }
 
 #-------------------------------------------------------
 # Reverse Proxy - traefik
@@ -667,29 +669,29 @@ resource "proxmox_virtual_environment_vm" "reverse_proxy" {
 # Talos Control Plain Nodes
 #-------------------------------------------------------
 resource "local_file" "k8cp_snippet" {
-  count = length(var.k8_control_plain_list)
+  for_each = { for i, v in var.k8_control_plain_list : i => v }
   content = templatefile("${path.module}/cloud-init/templates/talos.tftpl", {
-    hostname    = var.k8_control_plain_list[count.index].name
+    hostname    = each.value.name
     mac_address = ""
   })
-  filename = "${path.module}/cloud-init/tmp/cloud_config_k8cp-${count.index + 1}.yml"
+  filename = "${path.module}/cloud-init/tmp/cloud_config_${each.value.name}.yml"
 }
 
 resource "proxmox_virtual_environment_file" "k8cp_cloud_config" {
-  count        = length(var.k8_control_plain_list)
+  for_each     = { for i, v in var.k8_control_plain_list : i => v }
   depends_on   = [resource.local_file.k8cp_snippet]
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = var.k8_control_plain_list[count.index].host_node
+  node_name    = each.value.host_node
   source_file {
-    path = resource.local_file.k8cp_snippet[count.index].filename
+    path = resource.local_file.k8cp_snippet[each.key].filename
   }
 }
 
 resource "proxmox_virtual_environment_vm" "k8cp" {
-  count               = length(var.k8_control_plain_list)
-  name                = var.k8_control_plain_list[count.index].name
-  node_name           = var.k8_control_plain_list[count.index].host_node
+  for_each            = { for i, v in var.k8_control_plain_list : i => v }
+  name                = each.value.name
+  node_name           = each.value.host_node
   description         = "Managed by Terraform"
   tags                = ["terraform"]
   started             = true
@@ -715,7 +717,7 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
   disk {
     datastore_id = "local-lvm"
     file_format  = "raw"
-    file_id      = proxmox_virtual_environment_download_file.talos_boot_image[var.k8_worker_node_list[count.index].host_id].id
+    file_id      = proxmox_virtual_environment_download_file.talos_boot_image[each.value.host_node].id
     interface    = "scsi0"
     discard      = "on"
     size         = 20
@@ -733,11 +735,11 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
 
   initialization {
     datastore_id      = "local-lvm"
-    user_data_file_id = proxmox_virtual_environment_file.k8cp_cloud_config[count.index].id
+    user_data_file_id = proxmox_virtual_environment_file.k8cp_cloud_config[each.key].id
 
     ip_config {
       ipv4 {
-        address = "${var.k8_control_plain_list[count.index].ip_address}/24"
+        address = "${each.value.ip_address}/24"
         gateway = var.gateway_ip
       }
     }
@@ -763,107 +765,7 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
 
   lifecycle {
     ignore_changes = [
-      # started,
-      startup,
-    ]
-  }
-}
-
-#-------------------------------------------------------
-# Talos Worker Nodes
-#-------------------------------------------------------
-resource "local_file" "k8w_snippet" {
-  count = length(var.k8_worker_node_list)
-  content = templatefile("${path.module}/cloud-init/templates/talos.tftpl", {
-    hostname    = var.k8_worker_node_list[count.index].name
-    mac_address = ""
-  })
-  filename = "${path.module}/cloud-init/tmp/cloud_config_k8w-${count.index + 1}.yml"
-}
-
-resource "proxmox_virtual_environment_file" "k8w_cloud_config" {
-  count        = length(var.k8_worker_node_list)
-  depends_on   = [resource.local_file.k8w_snippet]
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = var.k8_worker_node_list[count.index].host_node
-  source_file {
-    path = resource.local_file.k8w_snippet[count.index].filename
-  }
-}
-
-resource "proxmox_virtual_environment_vm" "k8w" {
-  count               = length(var.k8_worker_node_list)
-  name                = var.k8_worker_node_list[count.index].name
-  node_name           = var.k8_worker_node_list[count.index].host_node
-  description         = "Managed by Terraform"
-  tags                = ["terraform"]
-  started             = true
-  on_boot             = true
-  reboot_after_update = true
-  bios                = "ovmf"
-  machine             = "q35,viommu=virtio"
-
-  cpu {
-    cores = 2
-    type  = "host"
-  }
-  rng {
-    max_bytes = 1024
-    period    = 1000
-    source    = "/dev/urandom"
-  }
-  memory {
-    dedicated = 2048
-    floating  = 2048 # set equal to dedicated to enable ballooning
-  }
-  disk {
-    datastore_id = "local-lvm"
-    file_format  = "raw"
-    file_id      = proxmox_virtual_environment_download_file.talos_boot_image[var.k8_worker_node_list[count.index].host_id].id
-    interface    = "scsi0"
-    discard      = "on"
-    size         = 20
-  }
-  efi_disk {
-    datastore_id      = "local-lvm"
-    file_format       = "raw"
-    pre_enrolled_keys = false
-    type              = "4m"
-  }
-
-  initialization {
-    datastore_id      = "local-lvm"
-    user_data_file_id = proxmox_virtual_environment_file.k8w_cloud_config[count.index].id
-
-    ip_config {
-      ipv4 {
-        address = "${var.k8_worker_node_list[count.index].ip_address}/24"
-        gateway = var.gateway_ip
-      }
-    }
-    dns {
-      servers = [for server in var.dns_server_list : server.ip_address]
-    }
-  }
-
-  network_device {
-    bridge = "vmbr0"
-    model  = "virtio"
-  }
-
-  agent {
-    enabled = true
-  }
-
-  startup {
-    down_delay = -1
-    order      = -1
-    up_delay   = -1
-  }
-
-  lifecycle {
-    ignore_changes = [
+      initialization,
       # started,
       startup,
     ]
@@ -874,29 +776,29 @@ resource "proxmox_virtual_environment_vm" "k8w" {
 # Talos Storage Nodes
 #-------------------------------------------------------
 resource "local_file" "k8w_snippet_storage" {
-  count = length(var.k8_storage_node_list)
+  for_each = { for i, v in var.k8_storage_node_list : i => v }
   content = templatefile("${path.module}/cloud-init/templates/talos.tftpl", {
-    hostname    = var.k8_storage_node_list[count.index].name
+    hostname    = each.value.name
     mac_address = ""
   })
-  filename = "${path.module}/cloud-init/tmp/cloud_config_k8s-${count.index + 1}.yml"
+  filename = "${path.module}/cloud-init/tmp/cloud_config_k8s-${each.key}.yml"
 }
 
 resource "proxmox_virtual_environment_file" "k8w_cloud_config_storage" {
-  count        = length(var.k8_storage_node_list)
+  for_each     = { for i, v in var.k8_storage_node_list : i => v }
   depends_on   = [resource.local_file.k8w_snippet_storage]
   content_type = "snippets"
   datastore_id = "local"
-  node_name    = var.k8_storage_node_list[count.index].host_node
+  node_name    = each.value.host_node
   source_file {
-    path = resource.local_file.k8w_snippet_storage[count.index].filename
+    path = local_file.k8w_snippet_storage[each.key].filename
   }
 }
 
 resource "proxmox_virtual_environment_vm" "k8s" {
-  count               = length(var.k8_storage_node_list)
-  name                = var.k8_storage_node_list[count.index].name
-  node_name           = var.k8_storage_node_list[count.index].host_node
+  for_each            = { for i, v in var.k8_storage_node_list : i => v }
+  name                = each.value.name
+  node_name           = each.value.host_node
   description         = "Managed by Terraform"
   tags                = ["terraform"]
   started             = true
@@ -915,16 +817,17 @@ resource "proxmox_virtual_environment_vm" "k8s" {
     source    = "/dev/urandom"
   }
   memory {
-    dedicated = 2048
-    floating  = 2048 # set equal to dedicated to enable ballooning
+    dedicated = each.value.ram
+    floating  = each.value.ram # set equal to dedicated to enable ballooning
   }
   disk {
     datastore_id = "local-lvm"
     file_format  = "raw"
-    file_id      = proxmox_virtual_environment_download_file.talos_boot_image_storage[var.k8_storage_node_list[count.index].host_id].id
-    interface    = "scsi0"
-    discard      = "on"
-    size         = 20
+    # file_id      = proxmox_virtual_environment_download_file.talos_boot_image_storage[each.value.host_node].id
+    file_id   = "local:iso/talos-v1.12.6-nocloud-amd64-storage.iso"
+    interface = "scsi0"
+    discard   = "on"
+    size      = 20
   }
   efi_disk {
     datastore_id      = "local-lvm"
@@ -935,11 +838,11 @@ resource "proxmox_virtual_environment_vm" "k8s" {
 
   initialization {
     datastore_id      = "local-lvm"
-    user_data_file_id = proxmox_virtual_environment_file.k8w_cloud_config_storage[count.index].id
+    user_data_file_id = proxmox_virtual_environment_file.k8w_cloud_config_storage[each.key].id
 
     ip_config {
       ipv4 {
-        address = "${var.k8_storage_node_list[count.index].ip_address}/24"
+        address = "${each.value.ip_address}/24"
         gateway = var.gateway_ip
       }
     }
@@ -985,7 +888,6 @@ resource "kubernetes_namespace_v1" "metallb" {
   }
 }
 
-
 resource "local_file" "metallb_values" {
   content  = templatefile("${path.module}/helm/templates/metallb.tftpl", {})
   filename = "${path.module}/helm/tmp/metallb.yml"
@@ -993,7 +895,7 @@ resource "local_file" "metallb_values" {
 
 resource "helm_release" "metallb" {
   name              = "metallb"
-  namespace         = kubernetes_namespace_v1.metallb.metadata[0].name
+  namespace         = kubernetes_namespace_v1.metallb.id
   create_namespace  = false
   dependency_update = true
   repository        = "https://metallb.github.io/metallb"
@@ -1028,42 +930,40 @@ resource "terraform_data" "apply_metallb_configs" {
 }
 
 #-------------------------------------------------------
-# Kubernetes Dashboard
+# Kubernetes Dashboard - Currently installed desktop
 #-------------------------------------------------------
-# resource "helm_release" "traefik" {
-#   depends_on = [ local_file.traefik_values ]
-#   name              = "kubernetes-dashboard"
-#   namespace         = "kubernetes-dashboard"
-#   create_namespace  = true
+# resource "helm_release" "headlamp" {
+#   name              = "headlamp"
+#   namespace         = "kube-system"
 #   dependency_update = true
-#   repository        = "https://kubernetes.github.io/dashboard/"
-#   chart             = "kubernetes-dashboard"
+#   repository        = "https://kubernetes-sigs.github.io/headlamp/"
+#   chart             = "headlamp"
 # }
 
 #-------------------------------------------------------
 # Kubernetes - Storage
 #-------------------------------------------------------
-# resource "kubernetes_namespace_v1" "storage" {
-#   metadata {
-#     name = "longhorn-system"
-#     annotations = {
-#       "pod-security.kubernetes.io/enforce" = "privileged"
-#     }
-#   }
-# }
+resource "kubernetes_namespace_v1" "storage" {
+  metadata {
+    name = "longhorn-system"
+    labels = {
+      "pod-security.kubernetes.io/enforce" = "privileged"
+    }
+  }
+}
 
-# resource "helm_release" "longhorn" {
-#   name              = "longhorn"
-#   namespace         = kubernetes_namespace_v1.storage.id
-#   create_namespace  = false
-#   dependency_update = true
-#   repository        = "https://charts.longhorn.io"
-#   chart             = "longhorn"
-#   version           = "1.9.0"
+resource "helm_release" "longhorn" {
+  name              = "longhorn"
+  namespace         = kubernetes_namespace_v1.storage.id
+  create_namespace  = false
+  dependency_update = true
+  repository        = "https://charts.longhorn.io"
+  chart             = "longhorn"
+  version           = "1.9.0"
 
-#   # atomic          = true
-#   # cleanup_on_fail = true
-# }
+  # atomic          = true
+  # cleanup_on_fail = true
+}
 
 #-------------------------------------------------------
 # Kubernetes - Traefik
@@ -1101,7 +1001,7 @@ resource "tls_self_signed_cert" "traefik" {
 resource "kubernetes_secret_v1" "traefik_tls_secret" {
   metadata {
     name      = "local-selfsigned-tls"
-    namespace = kubernetes_namespace_v1.traefik.metadata[0].name
+    namespace = kubernetes_namespace_v1.traefik.id
   }
 
   data = {
@@ -1113,13 +1013,16 @@ resource "kubernetes_secret_v1" "traefik_tls_secret" {
 }
 
 resource "local_file" "traefik_values" {
-  content  = templatefile("${path.module}/helm/templates/traefik.tftpl", {})
+  content = templatefile("${path.module}/helm/templates/traefik.tftpl", {
+    dns_zone = var.dns_zone,
+    password = var.traefik_password,
+  })
   filename = "${path.module}/helm/tmp/traefik.yml"
 }
 
 resource "helm_release" "traefik" {
   name              = "traefik"
-  namespace         = kubernetes_namespace_v1.traefik.metadata[0].name
+  namespace         = kubernetes_namespace_v1.traefik.id
   create_namespace  = false
   dependency_update = true
   # force_update      = true
