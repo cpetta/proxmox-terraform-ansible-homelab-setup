@@ -28,11 +28,11 @@ terraform {
       source  = "hashicorp/tls"
       version = "4.2.1"
     }
+    htpasswd = {
+      source  = "loafoe/htpasswd"
+      version = "2.1.0"
+    }
   }
-}
-
-provider "tls" {
-
 }
 
 #-------------------------------------------------------
@@ -45,15 +45,18 @@ variable "local" {
 
 variable "dns_zone" {}
 variable "dns_tsig_secret" {}
-variable "cipassword" {}
-variable "traefik_password" {}
-variable "cipassword_hash" {}
 variable "ssh_public_key" {}
 variable "pm_api_token" {}
 variable "pm_api_url" {}
 variable "pm_api_url_remote" {}
-variable "pm_pasword" {}
+
 variable "tailscale_auth_key" {}
+
+variable "pm_pasword" {}
+variable "cipassword" {}
+variable "cipassword_hash" {}
+variable "traefik_password" {}
+variable "longhorn_password" {}
 
 variable "gateway_ip" {}
 
@@ -150,10 +153,6 @@ provider "proxmox" {
   }
 }
 
-provider "talos" {
-
-}
-
 provider "kubernetes" {
   config_path = local_file.kubeconfig.filename
 }
@@ -163,6 +162,10 @@ provider "helm" {
     config_path = local_file.kubeconfig.filename
   }
 }
+
+provider "talos" {}
+provider "tls" {}
+provider "htpasswd" {}
 
 #-------------------------------------------------------
 # Cloud Image Resources
@@ -941,6 +944,26 @@ resource "terraform_data" "apply_metallb_configs" {
 # }
 
 #-------------------------------------------------------
+# Kubernetes - Metrics
+#-------------------------------------------------------
+resource "kubernetes_namespace_v1" "metrics" {
+  metadata {
+    name = "metrics"
+    labels = {
+      "pod-security.kubernetes.io/enforce" = "privileged"
+    }
+  }
+}
+
+resource "helm_release" "kube_prometheus_stack" {
+  name              = "kube-prometheus-stack"
+  namespace         = kubernetes_namespace_v1.metrics.id
+  dependency_update = true
+  repository        = "https://prometheus-community.github.io/helm-charts/"
+  chart             = "kube-prometheus-stack"
+}
+
+#-------------------------------------------------------
 # Kubernetes - Storage
 #-------------------------------------------------------
 resource "kubernetes_namespace_v1" "storage" {
@@ -948,6 +971,11 @@ resource "kubernetes_namespace_v1" "storage" {
     name = "longhorn-system"
     labels = {
       "pod-security.kubernetes.io/enforce" = "privileged"
+      "pod-security.kubernetes.io/enforce-version" =  "latest"
+      "pod-security.kubernetes.io/audit" =  "privileged"
+      "pod-security.kubernetes.io/audit-version" =  "latest"
+      "pod-security.kubernetes.io/warn" =  "privileged"
+      "pod-security.kubernetes.io/warn-version" =  "latest"
     }
   }
 }
@@ -964,6 +992,96 @@ resource "helm_release" "longhorn" {
   # atomic          = true
   # cleanup_on_fail = true
 }
+
+resource "htpasswd_password" "longhorn" {
+  password = var.longhorn_password
+}
+
+resource "kubernetes_secret_v1" "longhorn_auth" {
+  metadata {
+    name      = "basic-auth"
+    namespace = kubernetes_namespace_v1.storage.id
+  }
+
+  type = "Opaque"
+  data = {
+    auth = "admin:${htpasswd_password.longhorn.apr1}"
+  }
+}
+
+resource "kubernetes_manifest" "longhorn_auth_middleware" {
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "Middleware"
+
+    metadata = {
+      name      = "longhorn-auth"
+      namespace = "longhorn-system"
+    }
+
+    spec = {
+      basicAuth = {
+        secret = "basic-auth"
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "longhorn_buffering_middleware" {
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "Middleware"
+
+    metadata = {
+      name      = "longhorn-buffering"
+      namespace = "longhorn-system"
+    }
+
+    spec = {
+      buffering = {
+        maxRequestBodyBytes = 10485760000
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "longhorn_ingressroute" {
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "IngressRoute"
+
+    metadata = {
+    name      = "longhorn-ingress"
+    namespace = "longhorn-system"
+
+    annotations = {
+      "traefik.ingress.kubernetes.io/router.middlewares" = "longhorn-system-longhorn-auth@kubernetescrd,longhorn-system-longhorn-buffering@kubernetescrd"
+    }
+  }
+
+    spec = {
+      entryPoints = [
+        "web",
+        "websecure",
+      ]
+
+      routes = [
+        {
+          match = "Host(`longhorn.${var.dns_zone}`)"
+          kind  = "Rule"
+
+          services = [
+            {
+              name = "longhorn-frontend"
+              port = 80
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
 
 #-------------------------------------------------------
 # Kubernetes - Traefik
@@ -1032,174 +1150,6 @@ resource "helm_release" "traefik" {
     local_file.traefik_values.content
   ]
 }
-
-# resource "kubernetes_pod_v1" "nfs_server" {
-#   metadata {
-#     name      = "nfs-server"
-#     namespace = "storage"
-#   }
-#   spec {
-#     affinity {
-#       node_affinity {
-#         required_during_scheduling_ignored_during_execution {
-#           node_selector_term {
-#             match_expressions {
-#               key = "storage"
-#               operator = "In"
-#               values = ["k8w2"]
-#             }
-#           }
-#         }
-#       }
-#     }
-#     container {
-#       name  = "nfs-server"
-#       image = "k8s.gcr.io/volume-nfs"
-
-#       port {
-#         name = "nfs"
-#         container_port = 2049
-#       }
-
-#       port {
-#         name = "mountd"
-#         container_port = 20048
-#       }
-
-#       port {
-#         name = "rpcbind"
-#         container_port = 111
-#       }
-
-#       # security_context {
-#       #   privileged = true
-#       # }
-
-#       volume_mount {
-#         name = "storage"
-#         mount_path = "/exports"
-#       }
-#     }
-#     volume {
-#       name = "storage"
-#       local {
-#         path = "/data/nfs"
-#       }
-#     }
-#   }
-# }
-
-# resource "kubernetes_deployment_v1" "nfs_server" {
-#   metadata {
-#     name      = "nfs-server"
-#     # namespace = "storage"
-#   }
-
-#   spec {
-#     replicas = 1
-#     selector {
-#       match_labels = {
-#         app = "nfs-server"
-#       }
-#     }
-
-#     template {
-#       metadata {
-#         labels = {
-#           app = "nfs-server"
-#         }
-#       }
-
-#       spec {
-#         # affinity {
-#         #   node_affinity {
-#         #     required_during_scheduling_ignored_during_execution {
-#         #       node_selector_term {
-#         #         match_expressions {
-#         #           key      = "storage"
-#         #           operator = "In"
-#         #           values   = ["k8w2"]
-#         #         }
-#         #       }
-#         #     }
-#         #   }
-#         # }
-#         container {
-#           name  = "nfs-server"
-#           image = "googlecontainersmirrors/volume-nfs"
-
-#           port {
-#             name           = "nfs"
-#             container_port = 2049
-#           }
-
-#           port {
-#             name           = "mountd"
-#             container_port = 20048
-#           }
-
-#           port {
-#             name           = "rpcbind"
-#             container_port = 111
-#           }
-
-#           # security_context {
-#           #   privileged = true
-#           # }
-
-#           # volume_mount {
-#           #   name       = "storage"
-#           #   mount_path = "/exports"
-#           # }
-#         }
-#         # volume {
-#         #   name = "storage"
-#         #   local {
-#         #     path = "/data/nfs"
-#         #   }
-#         # }
-#       }
-#     }
-#   }
-# }
-
-# resource "kubernetes_pod" "test" {
-#   metadata {
-#     name = "terraform-example"
-#   }
-
-#   spec {
-#     container {
-#       image = "nginx:1.21.6"
-#       name  = "example"
-
-#       env {
-#         name  = "environment"
-#         value = "test"
-#       }
-
-#       port {
-#         container_port = 80
-#       }
-
-#       liveness_probe {
-#         http_get {
-#           path = "/"
-#           port = 80
-
-#           http_header {
-#             name  = "X-Custom-Header"
-#             value = "Awesome"
-#           }
-#         }
-
-#         initial_delay_seconds = 3
-#         period_seconds        = 3
-#       }
-#     }
-#   }
-# }
-
 
 #-------------------------------------------------------
 # Kubernetes Config
