@@ -74,50 +74,56 @@ locals {
     name               = "Chloes_Cluster"
     endpoint           = "https://${var.k8_control_plain_list[0].ip_address}:6443"
   }
-  talos_default_patch = [
-    yamlencode({
-      machine = {
-        install = {
-          disk  = "/dev/sda"
-          image = data.talos_image_factory_urls.this.urls.installer
-        }
+  talos_default_patch = {
+    machine = {
+      install = {
+        disk  = "/dev/sda"
+        image = data.talos_image_factory_urls.this.urls.installer
       }
-    })
-  ]
-  talos_storage_patch = [
-    yamlencode({
-      machine = {
-        install = {
-          disk  = "/dev/sda"
-          image = data.talos_image_factory_urls.storage.urls.installer
-        }
-        kubelet = {
-          extraMounts = [
+    }
+  }
+  talos_storage_patch = {
+    machine = {
+      install = {
+        disk  = "/dev/sda"
+        image = data.talos_image_factory_urls.storage.urls.installer
+      }
+      disks = [
+        {
+          device = "/dev/sdb"
+          partitions = [
             {
-              destination = "/var/lib/longhorn"
-              type        = "bind"
-              source      = "/var/lib/longhorn"
-              options = [
-                "bind",
-                "rshared",
-                "rw",
-              ]
+              mountpoint = "/var/lib/longhorn"
+              size       = 0
             }
           ]
-        }
-        sysctls = {
-          "vm.nr_hugepages" = "1024"
-        }
-        kernel = {
-          modules = [
-            { name = "nvme_tcp" },
-            { name = "vfio_pci" }
-          ]
-        }
+        },
+      ]
+      kubelet = {
+        extraMounts = [
+          {
+            destination = "/var/lib/longhorn"
+            type        = "bind"
+            source      = "/var/lib/longhorn"
+            options = [
+              "bind",
+              "rshared",
+              "rw",
+            ]
+          }
+        ]
       }
-    })
-  ]
-
+      sysctls = {
+        "vm.nr_hugepages" = "1024"
+      }
+      kernel = {
+        modules = [
+          { name = "nvme_tcp" },
+          { name = "vfio_pci" }
+        ]
+      }
+    }
+  }
 }
 
 variable "pfs1_ip" {}
@@ -187,17 +193,17 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
 # Testing VM Image
 #-------------------------------------------------------
 // Reference https://atxfiles.netgate.com/mirror/downloads/
-resource "proxmox_virtual_environment_download_file" "mint_iso_1" {
-  content_type        = "iso"
-  datastore_id        = "local"
-  node_name           = "pm1"
-  url                 = "https://mirrors.edge.kernel.org/linuxmint/stable/22.3/linuxmint-22.3-xfce-64bit.iso"
-  file_name           = "linuxmint-22.3-xfce-64bit.iso"
-  overwrite           = false
-  overwrite_unmanaged = true
-  checksum            = "45a835b5dddaf40e84d776549e0b19b3fbd49673b6cc6434ebddbfcd217df776"
-  checksum_algorithm  = "sha256"
-}
+# resource "proxmox_virtual_environment_download_file" "mint_iso_1" {
+#   content_type        = "iso"
+#   datastore_id        = "local"
+#   node_name           = "pm1"
+#   url                 = "https://mirrors.edge.kernel.org/linuxmint/stable/22.3/linuxmint-22.3-xfce-64bit.iso"
+#   file_name           = "linuxmint-22.3-xfce-64bit.iso"
+#   overwrite           = false
+#   overwrite_unmanaged = true
+#   checksum            = "45a835b5dddaf40e84d776549e0b19b3fbd49673b6cc6434ebddbfcd217df776"
+#   checksum_algorithm  = "sha256"
+# }
 
 #-------------------------------------------------------
 # Talos Linux Kubernetes Image
@@ -323,7 +329,7 @@ resource "talos_machine_configuration_apply" "k8_bootstrap_node" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.k8_bootstrap_node.machine_configuration
   node                        = var.k8_control_plain_list[0].ip_address
-  config_patches              = local.talos_default_patch
+  config_patches              = [yamlencode(local.talos_default_patch)]
 }
 
 resource "talos_machine_bootstrap" "k8_bootstrap_node" {
@@ -366,9 +372,13 @@ resource "talos_machine_configuration_apply" "controlplane" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
   node                        = each.value.ip_address
-  config_patches              = local.talos_default_patch
+  config_patches              = [yamlencode(local.talos_default_patch)]
 }
 
+resource "local_file" "talosconfig" {
+  content  = data.talos_client_configuration.controlplane.talos_config
+  filename = "${path.module}/../talosconfig"
+}
 
 #-------------------------------------------------------
 # Talos Worker Nodes
@@ -388,12 +398,17 @@ data "talos_client_configuration" "storage" {
 }
 
 resource "talos_machine_configuration_apply" "storage" {
-  depends_on                  = [proxmox_virtual_environment_vm.k8s]
-  count                       = length(var.k8_storage_node_list)
+  for_each                    = { for i, v in var.k8_storage_node_list : i => v }
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.storage.machine_configuration
-  node                        = var.k8_storage_node_list[count.index].ip_address
-  config_patches              = local.talos_storage_patch
+  node                        = each.value.ip_address
+  config_patches              = [yamlencode(local.talos_storage_patch)]
+
+  lifecycle {
+    replace_triggered_by = [
+      proxmox_virtual_environment_vm.k8s[each.key]
+    ]
+  }
 }
 
 
@@ -826,11 +841,23 @@ resource "proxmox_virtual_environment_vm" "k8s" {
   disk {
     datastore_id = "local-lvm"
     file_format  = "raw"
-    # file_id      = proxmox_virtual_environment_download_file.talos_boot_image_storage[each.value.host_node].id
-    file_id   = "local:iso/talos-v1.12.6-nocloud-amd64-storage.iso"
+    file_id      = proxmox_virtual_environment_download_file.talos_boot_image_storage[each.value.host_node].id
     interface = "scsi0"
     discard   = "on"
-    size      = 20
+    size      = each.value.disk_space
+    ssd       = true
+    replicate = false
+  }
+  dynamic "disk" {
+    for_each = { for i, v in each.value.extra_disks : i => v }
+    iterator = disk
+    content {
+      datastore_id = disk.value["datastore_id"]
+      size         = disk.value["size"]
+      ssd          = disk.value["ssd"]
+      interface    = "scsi${disk.key + 1}"
+      replicate    = false
+    }
   }
   efi_disk {
     datastore_id      = "local-lvm"
@@ -933,157 +960,6 @@ resource "terraform_data" "apply_metallb_configs" {
 }
 
 #-------------------------------------------------------
-# Kubernetes Dashboard - Currently installed desktop
-#-------------------------------------------------------
-# resource "helm_release" "headlamp" {
-#   name              = "headlamp"
-#   namespace         = "kube-system"
-#   dependency_update = true
-#   repository        = "https://kubernetes-sigs.github.io/headlamp/"
-#   chart             = "headlamp"
-# }
-
-#-------------------------------------------------------
-# Kubernetes - Metrics
-#-------------------------------------------------------
-resource "kubernetes_namespace_v1" "metrics" {
-  metadata {
-    name = "metrics"
-    labels = {
-      "pod-security.kubernetes.io/enforce" = "privileged"
-    }
-  }
-}
-
-resource "helm_release" "kube_prometheus_stack" {
-  name              = "kube-prometheus-stack"
-  namespace         = kubernetes_namespace_v1.metrics.id
-  dependency_update = true
-  repository        = "https://prometheus-community.github.io/helm-charts/"
-  chart             = "kube-prometheus-stack"
-}
-
-#-------------------------------------------------------
-# Kubernetes - Storage
-#-------------------------------------------------------
-resource "kubernetes_namespace_v1" "storage" {
-  metadata {
-    name = "longhorn-system"
-    labels = {
-      "pod-security.kubernetes.io/enforce" = "privileged"
-      "pod-security.kubernetes.io/enforce-version" =  "latest"
-      "pod-security.kubernetes.io/audit" =  "privileged"
-      "pod-security.kubernetes.io/audit-version" =  "latest"
-      "pod-security.kubernetes.io/warn" =  "privileged"
-      "pod-security.kubernetes.io/warn-version" =  "latest"
-    }
-  }
-}
-
-resource "helm_release" "longhorn" {
-  name              = "longhorn"
-  namespace         = kubernetes_namespace_v1.storage.id
-  create_namespace  = false
-  dependency_update = true
-  repository        = "https://charts.longhorn.io"
-  chart             = "longhorn"
-  version           = "1.9.0"
-
-  # atomic          = true
-  # cleanup_on_fail = true
-}
-
-resource "htpasswd_password" "longhorn" {
-  password = var.longhorn_password
-}
-
-resource "kubernetes_secret_v1" "longhorn_auth" {
-  metadata {
-    name      = "basic-auth"
-    namespace = kubernetes_namespace_v1.storage.id
-  }
-
-  type = "Opaque"
-  data = {
-    auth = "admin:${htpasswd_password.longhorn.apr1}"
-  }
-}
-
-resource "kubernetes_manifest" "longhorn_auth_middleware" {
-  manifest = {
-    apiVersion = "traefik.io/v1alpha1"
-    kind       = "Middleware"
-
-    metadata = {
-      name      = "longhorn-auth"
-      namespace = "longhorn-system"
-    }
-
-    spec = {
-      basicAuth = {
-        secret = "basic-auth"
-      }
-    }
-  }
-}
-
-resource "kubernetes_manifest" "longhorn_buffering_middleware" {
-  manifest = {
-    apiVersion = "traefik.io/v1alpha1"
-    kind       = "Middleware"
-
-    metadata = {
-      name      = "longhorn-buffering"
-      namespace = "longhorn-system"
-    }
-
-    spec = {
-      buffering = {
-        maxRequestBodyBytes = 10485760000
-      }
-    }
-  }
-}
-
-resource "kubernetes_manifest" "longhorn_ingressroute" {
-  manifest = {
-    apiVersion = "traefik.io/v1alpha1"
-    kind       = "IngressRoute"
-
-    metadata = {
-    name      = "longhorn-ingress"
-    namespace = "longhorn-system"
-
-    annotations = {
-      "traefik.ingress.kubernetes.io/router.middlewares" = "longhorn-system-longhorn-auth@kubernetescrd,longhorn-system-longhorn-buffering@kubernetescrd"
-    }
-  }
-
-    spec = {
-      entryPoints = [
-        "web",
-        "websecure",
-      ]
-
-      routes = [
-        {
-          match = "Host(`longhorn.${var.dns_zone}`)"
-          kind  = "Rule"
-
-          services = [
-            {
-              name = "longhorn-frontend"
-              port = 80
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-
-
-#-------------------------------------------------------
 # Kubernetes - Traefik
 #-------------------------------------------------------
 resource "kubernetes_namespace_v1" "traefik" {
@@ -1152,36 +1028,194 @@ resource "helm_release" "traefik" {
 }
 
 #-------------------------------------------------------
-# Kubernetes Config
+# Kubernetes Dashboard - Currently installed desktop
 #-------------------------------------------------------
-# resource "kubernetes_persistent_volume_claim" "jellyfin_config" {
+# resource "helm_release" "headlamp" {
+#   name              = "headlamp"
+#   namespace         = "kube-system"
+#   dependency_update = true
+#   repository        = "https://kubernetes-sigs.github.io/headlamp/"
+#   chart             = "headlamp"
+# }
+
+#-------------------------------------------------------
+# Kubernetes - Metrics
+#-------------------------------------------------------
+# resource "kubernetes_namespace_v1" "metrics" {
 #   metadata {
-#     name = "jellyfin-config-pvc"
-#   }
-#   spec {
-#     access_modes = ["ReadWriteMany"]
-#     resources {
-#       requests = {
-#         storage = "5Gi"
-#       }
+#     name = "metrics"
+#     labels = {
+#       "pod-security.kubernetes.io/enforce" = "privileged"
 #     }
-#     volume_name = "${kubernetes_persistent_volume.example.metadata.0.name}"
 #   }
 # }
 
-# resource "kubernetes_persistent_volume" "jellyfin_config" {
-#   metadata {
-#     name = "jellyfin-config"
-#   }
-#   spec {
-#     capacity = {
-#       storage = "5Gi"
-#     }
-#     access_modes = ["ReadWriteMany"]
-#     persistent_volume_source {
-#       gce_persistent_disk {
-#         pd_name = "test-123"
-#       }
-#     }
-#   }
+# resource "helm_release" "kube_prometheus_stack" {
+#   name              = "kube-prometheus-stack"
+#   namespace         = kubernetes_namespace_v1.metrics.id
+#   dependency_update = true
+#   repository        = "https://prometheus-community.github.io/helm-charts/"
+#   chart             = "kube-prometheus-stack"
 # }
+
+#-------------------------------------------------------
+# Kubernetes - Storage
+#-------------------------------------------------------
+resource "kubernetes_namespace_v1" "storage" {
+  metadata {
+    name = "longhorn-system"
+    labels = {
+      "pod-security.kubernetes.io/enforce"         = "privileged"
+      "pod-security.kubernetes.io/enforce-version" = "latest"
+      "pod-security.kubernetes.io/audit"           = "privileged"
+      "pod-security.kubernetes.io/audit-version"   = "latest"
+      "pod-security.kubernetes.io/warn"            = "privileged"
+      "pod-security.kubernetes.io/warn-version"    = "latest"
+    }
+  }
+}
+
+resource "helm_release" "longhorn" {
+  name              = "longhorn"
+  namespace         = kubernetes_namespace_v1.storage.id
+  create_namespace  = false
+  repository        = "https://charts.longhorn.io"
+  chart             = "longhorn"
+  version           = "1.9.0"
+  dependency_update = true
+  force_update      = true
+  take_ownership    = true
+  reset_values      = true
+  # atomic          = true
+  # cleanup_on_fail = true
+}
+
+resource "htpasswd_password" "longhorn" {
+  password = var.longhorn_password
+}
+
+resource "kubernetes_secret_v1" "longhorn_auth" {
+  metadata {
+    name      = "basic-auth"
+    namespace = kubernetes_namespace_v1.storage.id
+  }
+
+  type = "Opaque"
+  data = {
+    auth = "admin:${htpasswd_password.longhorn.apr1}"
+  }
+}
+
+resource "kubernetes_manifest" "longhorn_auth_middleware" {
+  depends_on = [ kubernetes_namespace_v1.storage ]
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "Middleware"
+
+    metadata = {
+      name      = "longhorn-auth"
+      namespace = "longhorn-system"
+    }
+
+    spec = {
+      basicAuth = {
+        secret = "basic-auth"
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "longhorn_buffering_middleware" {
+  depends_on = [ kubernetes_namespace_v1.storage ]
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "Middleware"
+
+    metadata = {
+      name      = "longhorn-buffering"
+      namespace = "longhorn-system"
+    }
+
+    spec = {
+      buffering = {
+        maxRequestBodyBytes = 10485760000
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "longhorn_ingressroute" {
+  depends_on = [ kubernetes_namespace_v1.storage ]
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "IngressRoute"
+
+    metadata = {
+      name      = "longhorn-ingress"
+      namespace = "longhorn-system"
+
+      annotations = {
+        "traefik.ingress.kubernetes.io/router.middlewares" = "longhorn-system-longhorn-auth@kubernetescrd,longhorn-system-longhorn-buffering@kubernetescrd"
+      }
+    }
+
+    spec = {
+      entryPoints = [
+        "web",
+        "websecure",
+      ]
+
+      routes = [
+        {
+          match = "Host(`longhorn.${var.dns_zone}`)"
+          kind  = "Rule"
+
+          services = [
+            {
+              name = "longhorn-frontend"
+              port = 80
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+
+
+
+#-------------------------------------------------------
+# Kubernetes Config
+#-------------------------------------------------------
+resource "kubernetes_persistent_volume" "jellyfin_config" {
+  metadata {
+    name = "jellyfin-config"
+  }
+  spec {
+    capacity = {
+      storage = "5Gi"
+    }
+    access_modes = ["ReadWriteMany"]
+    persistent_volume_source {
+      gce_persistent_disk {
+        pd_name = "jellyfin-config"
+      }
+    }
+  }
+}
+resource "kubernetes_persistent_volume_claim" "jellyfin_config" {
+  metadata {
+    name = "jellyfin-config-pvc"
+  }
+  spec {
+    access_modes = ["ReadWriteMany"]
+    resources {
+      requests = {
+        storage = "5Gi"
+      }
+    }
+    volume_name = "${kubernetes_persistent_volume.example.metadata.0.name}"
+  }
+}
+

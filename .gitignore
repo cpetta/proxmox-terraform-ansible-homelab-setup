@@ -60,6 +60,9 @@ terraform.rc
 .history
 .ionide
 
+# Talos
+talosconfig
+
 # Kubernetes
 kubeconfig
 

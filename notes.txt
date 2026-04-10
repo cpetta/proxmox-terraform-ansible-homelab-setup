@@ -199,6 +199,7 @@ https://github.com/geerlingguy/turing-pi-cluster
 
 Checkov -d ./
 
+helm uninstall longhorn -n longhorn-system --no-hooks
 kubectl delete all --all -n longhorn-system
 
 
@@ -214,3 +215,6 @@ https://github.com/longhorn/cli/?tab=readme-ov-file
 curl -L https://github.com/longhorn/cli/releases/download/${LonghornVersion}/longhornctl-${OS}-${ARCH} -o longhornctl
 chmod +x longhornctl
 mv ./longhornctl /usr/local/bin/longhornctl
+
+terraform state mv "talos_machine_configuration_apply.storage[0]" "talos_machine_configuration_apply.storage[\"0\"]"
+terraform state mv "talos_machine_configuration_apply.storage[2]" "talos_machine_configuration_apply.storage[\"2\"]"
