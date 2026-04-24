@@ -119,7 +119,8 @@ locals {
       kernel = {
         modules = [
           { name = "nvme_tcp" },
-          { name = "vfio_pci" }
+          { name = "vfio_pci" },
+          { name = "nfsd" }
         ]
       }
     }
@@ -272,6 +273,8 @@ data "talos_image_factory_extensions_versions" "storage" {
       "siderolabs/qemu-guest-agent",
       "siderolabs/iscsi-tools",
       "siderolabs/util-linux-tools",
+      "siderolabs/nfs-utils",
+      "siderolabs/nfsd",
     ]
   }
 }
@@ -1183,12 +1186,14 @@ resource "kubernetes_manifest" "longhorn_ingressroute" {
 }
 
 #-------------------------------------------------------
-# Kubernetes - Storage Test
+# Kubernetes Longhorn - NFS Storage
 #-------------------------------------------------------
 resource "kubernetes_namespace_v1" "network_storage" {
   metadata {
     name = "storage"
-    labels = {}
+    labels = {
+      "pod-security.kubernetes.io/enforce"         = "privileged"
+    }
   }
 }
 
@@ -1204,7 +1209,7 @@ resource "kubernetes_manifest" "nfs" {
     }
 
     spec = {
-      size             = "6291456" # 10Gi in bytes
+      size             = "5001707520" # 10Gi in bytes
       numberOfReplicas = 1
       frontend   = "blockdev"
       accessMode = "rwx"
@@ -1253,6 +1258,161 @@ resource "kubernetes_persistent_volume_claim_v1" "nfs" {
     
   }
 }
+
+
+#-------------------------------------------------------
+# Kubernetes - NFS server
+#-------------------------------------------------------
+# https://hub.docker.com/r/erichough/nfs-server/#starting-the-server
+resource "kubernetes_deployment_v1" "nfs_server" {
+  metadata {
+    name      = "nfs-server"
+    namespace = kubernetes_namespace_v1.network_storage.id
+  }
+
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "nfs-server"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "nfs-server"
+        }
+      }
+
+      spec {
+        container {
+          name  = "nfs-server"
+          image = "erichough/nfs-server"
+
+          env {
+            name = "NFS_LOG_LEVEL"
+            value = "DEBUG"
+          }
+
+          env {
+            name = "NFS_EXPORT_0"
+            value = "/etc/nfs *(rw,no_subtree_check,fsid=1)"
+          }
+
+          port {
+            name           = "nfs-tcp"
+            container_port = 2049
+            protocol = "TCP"
+          }
+
+          port {
+            name           = "nfs-udp"
+            container_port = 2049
+            protocol = "UDP"
+          }
+
+          # port {
+          #   name           = "mountd"
+          #   container_port = 20048
+          # }
+
+          # port {
+          #   name           = "rpcbind"
+          #   container_port = 111
+          # }
+
+          security_context {
+            privileged = true
+            
+            capabilities {
+              add = [
+                "SYS_ADMIN",
+                "CAP_SYS_ADMIN",
+              ]
+            }
+          }
+
+          volume_mount {
+            name       = kubernetes_persistent_volume_claim_v1.nfs.metadata.0.name
+            mount_path = "/etc/nfs"
+          }
+        }
+        volume {
+          name       = kubernetes_persistent_volume_claim_v1.nfs.metadata.0.name
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim_v1.nfs.metadata.0.name
+          }
+        }
+      }
+    }
+  }
+}
+
+# resource "kubernetes_service_v1" "nfs_service" {
+#   metadata {
+#     name      = "nfs"
+#     namespace = kubernetes_namespace_v1.network_storage.id
+#   }
+
+#   spec {
+#     selector = {
+#       app = "nfs-server"
+#     }
+
+#     port {
+#       name = "nfs-tcp"
+#       port = 2049
+#       protocol = "TCP"
+#     }
+
+#     port {
+#       name = "nfs-udp"
+#       port = 2049
+#       protocol = "UDP"
+#     }
+
+#     type = "LoadBalancer"
+#   }
+# }
+
+# resource "kubernetes_manifest" "nfs_ingressroute" {
+#   depends_on = [ kubernetes_namespace_v1.network_storage ]
+#   manifest = {
+#     apiVersion = "traefik.io/v1alpha1"
+#     kind       = "IngressRoute"
+    
+
+#     metadata = {
+#       name      = "nfs-ingress"
+#       namespace = kubernetes_namespace_v1.network_storage.id
+
+#       annotations = {
+#         # "traefik.ingress.kubernetes.io/router.middlewares" = "longhorn-system-longhorn-auth@kubernetescrd,longhorn-system-longhorn-buffering@kubernetescrd"
+#       }
+#     }
+
+#     spec = {
+#       entryPoints = [
+#         "nfs",
+#       ]
+
+#       routes = [
+#         {
+#           match = "Host(`nfs.${var.dns_zone}`)"
+#           kind  = "Rule"
+
+#           services = [
+#             {
+#               name = "nfs"
+#               port = 2049
+#             }
+#           ]
+#         }
+#       ]
+#     }
+#   }
+# }
 
 #-------------------------------------------------------
 # Jellyfin - Kubernetes Namespace

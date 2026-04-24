@@ -89,3 +89,6 @@ kinstall:
 
 kconfig:
 	cp ./kubeconfig ~/.kube/config
+
+yamltotf FILE:
+	tfk8s -f {{FILE}} -o {{FILE}}.tf
