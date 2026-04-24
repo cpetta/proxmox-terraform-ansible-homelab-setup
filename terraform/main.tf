@@ -1097,36 +1097,36 @@ resource "htpasswd_password" "longhorn" {
   password = var.longhorn_password
 }
 
-resource "kubernetes_secret_v1" "longhorn_auth" {
-  metadata {
-    name      = "basic-auth"
-    namespace = kubernetes_namespace_v1.storage.id
-  }
+# resource "kubernetes_secret_v1" "longhorn_auth" {
+#   metadata {
+#     name      = "basic-auth"
+#     namespace = kubernetes_namespace_v1.storage.id
+#   }
 
-  type = "Opaque"
-  data = {
-    auth = "admin:${htpasswd_password.longhorn.apr1}"
-  }
-}
+#   type = "Opaque"
+#   data = {
+#     auth = "admin:${htpasswd_password.longhorn.apr1}"
+#   }
+# }
 
-resource "kubernetes_manifest" "longhorn_auth_middleware" {
-  depends_on = [ kubernetes_namespace_v1.storage ]
-  manifest = {
-    apiVersion = "traefik.io/v1alpha1"
-    kind       = "Middleware"
+# resource "kubernetes_manifest" "longhorn_auth_middleware" {
+#   depends_on = [ kubernetes_namespace_v1.storage ]
+#   manifest = {
+#     apiVersion = "traefik.io/v1alpha1"
+#     kind       = "Middleware"
 
-    metadata = {
-      name      = "longhorn-auth"
-      namespace = "longhorn-system"
-    }
+#     metadata = {
+#       name      = "longhorn-auth"
+#       namespace = "longhorn-system"
+#     }
 
-    spec = {
-      basicAuth = {
-        secret = "basic-auth"
-      }
-    }
-  }
-}
+#     spec = {
+#       basicAuth = {
+#         secret = "basic-auth"
+#       }
+#     }
+#   }
+# }
 
 resource "kubernetes_manifest" "longhorn_buffering_middleware" {
   depends_on = [ kubernetes_namespace_v1.storage ]
@@ -1239,12 +1239,18 @@ resource "kubernetes_persistent_volume_v1" "nfs" {
       }
     }
   }
+  lifecycle {
+    ignore_changes = [
+      metadata
+    ]
+  }
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "nfs" {
   metadata {
     name = "nfs-pvc"
     namespace = kubernetes_namespace_v1.network_storage.id
+    annotations = {}
   }
   spec {
     volume_name = kubernetes_persistent_volume_v1.nfs.metadata.0.name
@@ -1297,29 +1303,62 @@ resource "kubernetes_deployment_v1" "nfs_server" {
 
           env {
             name = "NFS_EXPORT_0"
-            value = "/etc/nfs *(rw,no_subtree_check,fsid=1)"
+            value = "/etc/nfs *(rw,sync,no_subtree_check,fsid=0)"
           }
+
+          env {
+            name = "NFS_PORT"
+            value = "32049"
+          }
+
 
           port {
             name           = "nfs-tcp"
-            container_port = 2049
+            container_port = 32049
             protocol = "TCP"
           }
 
           port {
             name           = "nfs-udp"
-            container_port = 2049
+            container_port = 32049
             protocol = "UDP"
           }
 
+          # Enable these ports for NFSv3 support
           # port {
-          #   name           = "mountd"
-          #   container_port = 20048
+          #   name = "mountd-tcp"
+          #   container_port = 111
+          #   protocol = "TCP"
           # }
 
           # port {
-          #   name           = "rpcbind"
+          #   name = "mountd-udp"
           #   container_port = 111
+          #   protocol = "UDP"
+          # }
+
+          # port {
+          #   name = "statd-in-tcp"
+          #   container_port = 32765
+          #   protocol = "TCP"
+          # }
+
+          # port {
+          #   name = "statd-in-udp"
+          #   container_port = 32765
+          #   protocol = "UDP"
+          # }
+
+          # port {
+          #   name = "statd-out-tcp"
+          #   container_port = 32767
+          #   protocol = "TCP"
+          # }
+
+          # port {
+          #   name = "statd-out-udp"
+          #   container_port = 32767
+          #   protocol = "UDP"
           # }
 
           security_context {
@@ -1349,32 +1388,71 @@ resource "kubernetes_deployment_v1" "nfs_server" {
   }
 }
 
-# resource "kubernetes_service_v1" "nfs_service" {
-#   metadata {
-#     name      = "nfs"
-#     namespace = kubernetes_namespace_v1.network_storage.id
-#   }
+resource "kubernetes_service_v1" "nfs_service" {
+  metadata {
+    name      = "nfs"
+    namespace = kubernetes_namespace_v1.network_storage.id
+  }
 
-#   spec {
-#     selector = {
-#       app = "nfs-server"
-#     }
+  spec {
+    selector = {
+      app = "nfs-server"
+    }
 
-#     port {
-#       name = "nfs-tcp"
-#       port = 2049
-#       protocol = "TCP"
-#     }
+    port {
+      name = "nfs-tcp"
+      port = 2049
+      protocol = "TCP"
+      target_port = 32049
+    }
 
-#     port {
-#       name = "nfs-udp"
-#       port = 2049
-#       protocol = "UDP"
-#     }
+    port {
+      name = "nfs-udp"
+      port = 2049
+      protocol = "UDP"
+      target_port = 32049
+    }
 
-#     type = "LoadBalancer"
-#   }
-# }
+    # Enable these ports for NFSv3 support  
+    # port {
+    #   name = "mountd-tcp"
+    #   port = 111
+    #   protocol = "TCP"
+    # }
+
+    # port {
+    #   name = "mountd-udp"
+    #   port = 111
+    #   protocol = "UDP"
+    # }
+  
+    # port {
+    #   name = "statd-in-tcp"
+    #   port = 32765
+    #   protocol = "TCP"
+    # }
+
+    # port {
+    #   name = "statd-in-udp"
+    #   port = 32765
+    #   protocol = "UDP"
+    # }
+
+    # port {
+    #   name = "statd-out-tcp"
+    #   port = 32767
+    #   protocol = "TCP"
+    # }
+
+    # port {
+    #   name = "statd-out-udp"
+    #   port = 32767
+    #   protocol = "UDP"
+    # }
+
+    type = "LoadBalancer"
+  }
+}
 
 # resource "kubernetes_manifest" "nfs_ingressroute" {
 #   depends_on = [ kubernetes_namespace_v1.network_storage ]

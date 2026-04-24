@@ -18,18 +18,6 @@ ports:
     port: 443
     nodePort: 30001
 
-  nfs:
-    port: 2049
-    # nodePort: 30002
-
-  # mountd:
-  #   port: 20048
-  #   nodePort: 30003
-  
-  # rpcbind:
-  #   port: 111
-  #   nodePort: 30004
-
 # Enables the dashboard in Secure Mode
 api:
   dashboard: true
@@ -93,22 +81,6 @@ gateway:
         - kind: Secret
           name: local-selfsigned-tls  # the Secret we created before the installation
           group: ""
-
-    nfs:
-      port: 2049
-      protocol: TCP
-      namespacePolicy:
-        from: All
-    # mountd:
-    #   port: 20048
-    #   protocol: NFS
-    #   namespacePolicy:
-    #     from: All
-    # nfs:
-    #   port: 2049
-    #   protocol: NFS
-    #   namespacePolicy:
-    #     from: All
 
 # Enable Observability
 logs:
