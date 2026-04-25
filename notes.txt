@@ -218,3 +218,7 @@ mv ./longhornctl /usr/local/bin/longhornctl
 
 terraform state mv "talos_machine_configuration_apply.storage[0]" "talos_machine_configuration_apply.storage[\"0\"]"
 terraform state mv "talos_machine_configuration_apply.storage[2]" "talos_machine_configuration_apply.storage[\"2\"]"
+
+
+https://hub.docker.com/r/erichough/nfs-server/#starting-the-server
+https://github.com/ehough/docker-nfs-server

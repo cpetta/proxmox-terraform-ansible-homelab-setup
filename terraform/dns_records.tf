@@ -75,13 +75,13 @@ resource "dns_a_record_set" "pm" {
 }
 
 # Jellyfin
-resource "dns_a_record_set" "jf" {
-  zone = "${var.dns_zone}."
-  name = "media"
-  addresses = [
-    var.reverse_proxy_list[0].ip_address,
-  ]
-}
+# resource "dns_a_record_set" "jf" {
+#   zone = "${var.dns_zone}."
+#   name = "media"
+#   addresses = [
+#     var.reverse_proxy_list[0].ip_address,
+#   ]
+# }
 
 
 # Kubernetes cluster

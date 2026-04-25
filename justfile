@@ -90,5 +90,11 @@ kinstall:
 kconfig:
 	cp ./kubeconfig ~/.kube/config
 
+mount:
+	sudo mount -v -t nfs -o vers=4.2 nfs.chloepetta.net:/ /home/chloe/nfs
+
+umount:
+	sudo umount /home/chloe/nfs
+
 yamltotf FILE:
 	tfk8s -f {{FILE}} -o {{FILE}}.tf

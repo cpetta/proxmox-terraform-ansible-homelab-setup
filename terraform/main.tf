@@ -217,10 +217,11 @@ data "talos_image_factory_versions" "this" {
 
 locals {
   talos_version_latest = element(data.talos_image_factory_versions.this.talos_versions, length(data.talos_image_factory_versions.this.talos_versions) - 1)
+  talos_version        = "v1.12.6" // local.talos_version_latest
 }
 
 data "talos_image_factory_extensions_versions" "this" {
-  talos_version = local.talos_version_latest
+  talos_version = local.talos_version
   filters = {
     names = [
       "qemu",
@@ -242,7 +243,7 @@ resource "talos_image_factory_schematic" "this" {
 }
 
 data "talos_image_factory_urls" "this" {
-  talos_version = local.talos_version_latest
+  talos_version = local.talos_version
   schematic_id  = talos_image_factory_schematic.this.id
   platform      = "nocloud"
 }
@@ -253,7 +254,7 @@ resource "proxmox_virtual_environment_download_file" "talos_boot_image" {
   datastore_id            = "local"
   node_name               = each.value
   url                     = data.talos_image_factory_urls.this.urls.disk_image
-  file_name               = "talos-${local.talos_version_latest}-nocloud-amd64.iso"
+  file_name               = "talos-${local.talos_version}-nocloud-amd64.iso"
   decompression_algorithm = "zst"
   overwrite               = false
   overwrite_unmanaged     = true
@@ -267,7 +268,7 @@ locals {
 }
 
 data "talos_image_factory_extensions_versions" "storage" {
-  talos_version = local.talos_version_latest
+  talos_version = local.talos_version
   filters = {
     names = [
       "siderolabs/qemu-guest-agent",
@@ -290,7 +291,7 @@ resource "talos_image_factory_schematic" "storage" {
 }
 
 data "talos_image_factory_urls" "storage" {
-  talos_version = local.talos_version_latest
+  talos_version = local.talos_version
   schematic_id  = talos_image_factory_schematic.storage.id
   platform      = "nocloud"
 }
@@ -301,7 +302,7 @@ resource "proxmox_virtual_environment_download_file" "talos_boot_image_storage" 
   datastore_id            = "local"
   node_name               = each.value
   url                     = data.talos_image_factory_urls.storage.urls.disk_image
-  file_name               = "talos-${local.talos_version_latest}-nocloud-amd64-storage.iso"
+  file_name               = "talos-${local.talos_version}-nocloud-amd64-storage.iso"
   decompression_algorithm = "zst"
   overwrite               = false
   overwrite_unmanaged     = true
@@ -829,7 +830,7 @@ resource "proxmox_virtual_environment_vm" "k8s" {
   machine             = "q35,viommu=virtio"
 
   cpu {
-    cores = 2
+    cores = each.value.cpu_cores
     type  = "host"
   }
   rng {
@@ -845,11 +846,11 @@ resource "proxmox_virtual_environment_vm" "k8s" {
     datastore_id = "local-lvm"
     file_format  = "raw"
     file_id      = proxmox_virtual_environment_download_file.talos_boot_image_storage[each.value.host_node].id
-    interface = "scsi0"
-    discard   = "on"
-    size      = each.value.disk_space
-    ssd       = true
-    replicate = false
+    interface    = "scsi0"
+    discard      = "on"
+    size         = each.value.disk_space
+    ssd          = true
+    replicate    = false
   }
   dynamic "disk" {
     for_each = { for i, v in each.value.extra_disks : i => v }
@@ -1129,7 +1130,7 @@ resource "htpasswd_password" "longhorn" {
 # }
 
 resource "kubernetes_manifest" "longhorn_buffering_middleware" {
-  depends_on = [ kubernetes_namespace_v1.storage ]
+  depends_on = [kubernetes_namespace_v1.storage]
   manifest = {
     apiVersion = "traefik.io/v1alpha1"
     kind       = "Middleware"
@@ -1148,7 +1149,7 @@ resource "kubernetes_manifest" "longhorn_buffering_middleware" {
 }
 
 resource "kubernetes_manifest" "longhorn_ingressroute" {
-  depends_on = [ kubernetes_namespace_v1.storage ]
+  depends_on = [kubernetes_namespace_v1.storage]
   manifest = {
     apiVersion = "traefik.io/v1alpha1"
     kind       = "IngressRoute"
@@ -1186,56 +1187,65 @@ resource "kubernetes_manifest" "longhorn_ingressroute" {
 }
 
 #-------------------------------------------------------
-# Kubernetes Longhorn - NFS Storage
+# Jellyfin - Kubernetes Namespace
 #-------------------------------------------------------
-resource "kubernetes_namespace_v1" "network_storage" {
+resource "kubernetes_namespace_v1" "jellyfin" {
   metadata {
-    name = "storage"
+    name = "jellyfin"
     labels = {
-      "pod-security.kubernetes.io/enforce"         = "privileged"
+      "pod-security.kubernetes.io/enforce" = "privileged"
+      # "pod-security.kubernetes.io/enforce"         = "privileged"
+      # "pod-security.kubernetes.io/enforce-version" = "latest"
+      # "pod-security.kubernetes.io/audit"           = "privileged"
+      # "pod-security.kubernetes.io/audit-version"   = "latest"
+      # "pod-security.kubernetes.io/warn"            = "privileged"
+      # "pod-security.kubernetes.io/warn-version"    = "latest"
     }
   }
 }
 
-resource "kubernetes_manifest" "nfs" {
-  depends_on = [ helm_release.longhorn ]
+#-------------------------------------------------------
+# Jellyfin - Config Volume
+#-------------------------------------------------------
+resource "kubernetes_manifest" "jellyfin_config_longhorn_volume" {
+  depends_on = [helm_release.longhorn]
   manifest = {
     apiVersion = "longhorn.io/v1beta2"
     kind       = "Volume"
 
     metadata = {
-      name      = "nfs"
+      name      = "jellyfin-config-volume"
       namespace = "longhorn-system"
     }
 
     spec = {
-      size             = "5001707520" # 10Gi in bytes
-      numberOfReplicas = 1
-      frontend   = "blockdev"
-      accessMode = "rwx"
-      dataLocality = "disabled"
+      size             = "10737418240" # 10Gi in bytes
+      numberOfReplicas = 2
+      frontend         = "blockdev"
+      accessMode       = "rwx"
+      dataLocality     = "disabled"
     }
   }
 }
 
-resource "kubernetes_persistent_volume_v1" "nfs" {
-  depends_on = [ kubernetes_manifest.nfs ]
+resource "kubernetes_persistent_volume_v1" "jellyfin_config" {
+  depends_on = [kubernetes_manifest.jellyfin_config_longhorn_volume]
   metadata {
-    name = "nfs"
+    name = "jellyfin-config"
   }
 
   spec {
     storage_class_name = "longhorn"
-    access_modes = ["ReadWriteMany"]
+    access_modes       = ["ReadWriteMany"]
 
     capacity = {
-      storage = "5Gi"
+      storage = "10Gi"
     }
 
     persistent_volume_source {
       csi {
-        driver = "driver.longhorn.io"
-        volume_handle = kubernetes_manifest.nfs.manifest.metadata.name
+        driver        = "driver.longhorn.io"
+        volume_handle = kubernetes_manifest.jellyfin_config_longhorn_volume.manifest.metadata.name
       }
     }
   }
@@ -1246,25 +1256,94 @@ resource "kubernetes_persistent_volume_v1" "nfs" {
   }
 }
 
-resource "kubernetes_persistent_volume_claim_v1" "nfs" {
+resource "kubernetes_persistent_volume_claim_v1" "jellyfin_config" {
   metadata {
-    name = "nfs-pvc"
-    namespace = kubernetes_namespace_v1.network_storage.id
-    annotations = {}
+    name      = "jellyfin-config-pvc"
+    namespace = kubernetes_namespace_v1.jellyfin.id
   }
   spec {
-    volume_name = kubernetes_persistent_volume_v1.nfs.metadata.0.name
+    volume_name = kubernetes_persistent_volume_v1.jellyfin_config.metadata.0.name
     # storage_class_name = "longhorn"
     access_modes = ["ReadWriteMany"]
     resources {
       requests = {
-        storage = "5Gi"
+        storage = "10Gi"
       }
     }
-    
+
   }
 }
 
+#-------------------------------------------------------
+# Jellyfin - Media Volume
+#-------------------------------------------------------
+resource "kubernetes_manifest" "jellyfin_media_longhorn_volume" {
+  depends_on = [helm_release.longhorn]
+  manifest = {
+    apiVersion = "longhorn.io/v1beta2"
+    kind       = "Volume"
+
+    metadata = {
+      name      = "jellyfin-media-volume"
+      namespace = "longhorn-system"
+    }
+
+    spec = {
+      size             = "1099511627776" # 10Gi in bytes
+      numberOfReplicas = 1
+      frontend         = "blockdev"
+      accessMode       = "rwx"
+      dataLocality     = "disabled"
+    }
+  }
+}
+
+resource "kubernetes_persistent_volume_v1" "jellyfin_media" {
+  depends_on = [kubernetes_manifest.jellyfin_media_longhorn_volume]
+  metadata {
+    name = "jellyfin-media"
+  }
+
+  spec {
+    storage_class_name = "longhorn"
+    access_modes       = ["ReadWriteMany"]
+
+    capacity = {
+      storage = "1024Gi"
+    }
+
+    persistent_volume_source {
+      csi {
+        driver        = "driver.longhorn.io"
+        volume_handle = kubernetes_manifest.jellyfin_media_longhorn_volume.manifest.metadata.name
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      metadata
+    ]
+  }
+}
+
+resource "kubernetes_persistent_volume_claim_v1" "jellyfin_media" {
+  metadata {
+    name      = "jellyfin-media-pvc"
+    namespace = kubernetes_namespace_v1.jellyfin.id
+  }
+  spec {
+    volume_name = kubernetes_persistent_volume_v1.jellyfin_media.metadata.0.name
+    # storage_class_name = "longhorn"
+    access_modes = ["ReadWriteMany"]
+    resources {
+      requests = {
+        # storage = "1024Gi"
+        storage = "1Ti"
+      }
+    }
+
+  }
+}
 
 #-------------------------------------------------------
 # Kubernetes - NFS server
@@ -1273,7 +1352,7 @@ resource "kubernetes_persistent_volume_claim_v1" "nfs" {
 resource "kubernetes_deployment_v1" "nfs_server" {
   metadata {
     name      = "nfs-server"
-    namespace = kubernetes_namespace_v1.network_storage.id
+    namespace = kubernetes_namespace_v1.jellyfin.id
   }
 
   spec {
@@ -1297,31 +1376,40 @@ resource "kubernetes_deployment_v1" "nfs_server" {
           image = "erichough/nfs-server"
 
           env {
-            name = "NFS_LOG_LEVEL"
-            value = "DEBUG"
-          }
-
-          env {
-            name = "NFS_EXPORT_0"
-            value = "/etc/nfs *(rw,sync,no_subtree_check,fsid=0)"
-          }
-
-          env {
-            name = "NFS_PORT"
+            name  = "NFS_PORT"
             value = "32049"
           }
 
+          env {
+            name  = "NFS_LOG_LEVEL"
+            value = "DEBUG"
+          }
+
+          # env { // Jellyfin Media
+          #   name  = "NFS_EXPORT_0"
+          #   value = "/etc/jellyfin-media *(rw,sync,no_subtree_check,fsid=0)"
+          # }
+
+          # env { // Jellyfin Config
+          #   name = "NFS_EXPORT_1"
+          #   value = "/etc/jellyfin-config *(rw,sync,no_subtree_check,fsid=0)"
+          # }
+
+          # env { // Lets encrypt
+          #   name = "NFS_EXPORT_2"
+          #   value = "/etc/letsencrypt *(rw,sync,no_subtree_check,fsid=0)"
+          # }
 
           port {
             name           = "nfs-tcp"
             container_port = 32049
-            protocol = "TCP"
+            protocol       = "TCP"
           }
 
           port {
             name           = "nfs-udp"
             container_port = 32049
-            protocol = "UDP"
+            protocol       = "UDP"
           }
 
           # Enable these ports for NFSv3 support
@@ -1363,7 +1451,7 @@ resource "kubernetes_deployment_v1" "nfs_server" {
 
           security_context {
             privileged = true
-            
+
             capabilities {
               add = [
                 "SYS_ADMIN",
@@ -1372,17 +1460,42 @@ resource "kubernetes_deployment_v1" "nfs_server" {
             }
           }
 
-          volume_mount {
-            name       = kubernetes_persistent_volume_claim_v1.nfs.metadata.0.name
-            mount_path = "/etc/nfs"
-          }
+          # volume_mount { // Jellyfin Media
+          #   name       = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
+          #   mount_path = "/etc/jellyfin-media"
+          # }
+
+          # volume_mount { // Jellyfin Config
+          #   name       = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
+          #   mount_path = "/etc/jellyfin-config"
+          # }
+
+          # volume_mount { // Traefik 
+          #   name       = // Todo
+          #   mount_path = "/etc/letsencrypt"
+          # }
+
         }
-        volume {
-          name       = kubernetes_persistent_volume_claim_v1.nfs.metadata.0.name
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.nfs.metadata.0.name
-          }
-        }
+        # volume { // Jellyfin Media
+        #   name = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
+        #   persistent_volume_claim {
+        #     claim_name = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
+        #   }
+        # }
+
+        # volume { // Jellyfin Config
+        #   name       = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
+        #   persistent_volume_claim {
+        #     claim_name = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
+        #   }
+        # }
+
+        # volume { // Traefik Config
+        #   name       = // todo
+        #   persistent_volume_claim {
+        #     claim_name = // todo
+        #   }
+        # }
       }
     }
   }
@@ -1391,7 +1504,7 @@ resource "kubernetes_deployment_v1" "nfs_server" {
 resource "kubernetes_service_v1" "nfs_service" {
   metadata {
     name      = "nfs"
-    namespace = kubernetes_namespace_v1.network_storage.id
+    namespace = kubernetes_namespace_v1.jellyfin.id
   }
 
   spec {
@@ -1400,16 +1513,16 @@ resource "kubernetes_service_v1" "nfs_service" {
     }
 
     port {
-      name = "nfs-tcp"
-      port = 2049
-      protocol = "TCP"
+      name        = "nfs-tcp"
+      port        = 2049
+      protocol    = "TCP"
       target_port = 32049
     }
 
     port {
-      name = "nfs-udp"
-      port = 2049
-      protocol = "UDP"
+      name        = "nfs-udp"
+      port        = 2049
+      protocol    = "UDP"
       target_port = 32049
     }
 
@@ -1425,7 +1538,7 @@ resource "kubernetes_service_v1" "nfs_service" {
     #   port = 111
     #   protocol = "UDP"
     # }
-  
+
     # port {
     #   name = "statd-in-tcp"
     #   port = 32765
@@ -1452,215 +1565,71 @@ resource "kubernetes_service_v1" "nfs_service" {
 
     type = "LoadBalancer"
   }
-}
-
-# resource "kubernetes_manifest" "nfs_ingressroute" {
-#   depends_on = [ kubernetes_namespace_v1.network_storage ]
-#   manifest = {
-#     apiVersion = "traefik.io/v1alpha1"
-#     kind       = "IngressRoute"
-    
-
-#     metadata = {
-#       name      = "nfs-ingress"
-#       namespace = kubernetes_namespace_v1.network_storage.id
-
-#       annotations = {
-#         # "traefik.ingress.kubernetes.io/router.middlewares" = "longhorn-system-longhorn-auth@kubernetescrd,longhorn-system-longhorn-buffering@kubernetescrd"
-#       }
-#     }
-
-#     spec = {
-#       entryPoints = [
-#         "nfs",
-#       ]
-
-#       routes = [
-#         {
-#           match = "Host(`nfs.${var.dns_zone}`)"
-#           kind  = "Rule"
-
-#           services = [
-#             {
-#               name = "nfs"
-#               port = 2049
-#             }
-#           ]
-#         }
-#       ]
-#     }
-#   }
-# }
-
-#-------------------------------------------------------
-# Jellyfin - Kubernetes Namespace
-#-------------------------------------------------------
-resource "kubernetes_namespace_v1" "jellyfin" {
-  metadata {
-    name = "jellyfin"
-    labels = {
-      # "pod-security.kubernetes.io/enforce"         = "privileged"
-      # "pod-security.kubernetes.io/enforce-version" = "latest"
-      # "pod-security.kubernetes.io/audit"           = "privileged"
-      # "pod-security.kubernetes.io/audit-version"   = "latest"
-      # "pod-security.kubernetes.io/warn"            = "privileged"
-      # "pod-security.kubernetes.io/warn-version"    = "latest"
-    }
+  lifecycle {
+    ignore_changes = [
+      metadata
+    ]
   }
 }
-
-#-------------------------------------------------------
-# Jellyfin - Longhorn Config Volume
-#-------------------------------------------------------
-# resource "kubernetes_manifest" "jellyfin_config_longhorn_volume" {
-#   depends_on = [ helm_release.longhorn ]
-#   manifest = {
-#     apiVersion = "longhorn.io/v1beta2"
-#     kind       = "Volume"
-
-#     metadata = {
-#       name      = "jellyfin-config-volume"
-#       namespace = "longhorn-system"
-#     }
-
-#     spec = {
-#       size             = "10737418240" # 10Gi in bytes
-#       numberOfReplicas = 2
-#       frontend   = "blockdev"
-#       accessMode = "rwx"
-#       dataLocality = "disabled"
-#     }
-#   }
-# }
-
-# resource "kubernetes_persistent_volume_v1" "jellyfin_config" {
-#   depends_on = [ kubernetes_manifest.jellyfin_config_longhorn_volume ]
-#   metadata {
-#     name = "jellyfin-config"
-#   }
-
-#   spec {
-#     storage_class_name = "longhorn"
-#     access_modes = ["ReadWriteMany"]
-
-#     capacity = {
-#       storage = "10Gi"
-#     }
-
-#     persistent_volume_source {
-#       csi {
-#         driver = "driver.longhorn.io"
-#         volume_handle = kubernetes_manifest.jellyfin_config_longhorn_volume.manifest.metadata.name
-#       }
-#     }
-#   }
-# }
-
-# resource "kubernetes_persistent_volume_claim_v1" "jellyfin_config" {
-#   metadata {
-#     name = "jellyfin-config-pvc"
-#     namespace = kubernetes_namespace_v1.jellyfin.id
-#   }
-#   spec {
-#     volume_name = kubernetes_persistent_volume_v1.jellyfin_config.metadata.0.name
-#     # storage_class_name = "longhorn"
-#     access_modes = ["ReadWriteMany"]
-#     resources {
-#       requests = {
-#         storage = "10Gi"
-#       }
-#     }
-    
-#   }
-# }
-
-#-------------------------------------------------------
-# Jellyfin - Longhorn Media Volume
-#-------------------------------------------------------
-# resource "kubernetes_manifest" "jellyfin_media_longhorn_volume" {
-#   depends_on = [ helm_release.longhorn ]
-#   manifest = {
-#     apiVersion = "longhorn.io/v1beta2"
-#     kind       = "Volume"
-
-#     metadata = {
-#       name      = "jellyfin-media-volume"
-#       namespace = "longhorn-system"
-#     }
-
-#     spec = {
-#       size             = "1099511627776" # 10Gi in bytes
-#       numberOfReplicas = 1
-#       frontend   = "blockdev"
-#       accessMode = "rwo"
-#       dataLocality = "disabled"
-#     }
-#   }
-# }
-
-# resource "kubernetes_persistent_volume_v1" "jellyfin_media" {
-#   depends_on = [ kubernetes_manifest.jellyfin_media_longhorn_volume ]
-#   metadata {
-#     name = "jellyfin-media"
-#   }
-
-#   spec {
-#     storage_class_name = "longhorn"
-#     access_modes = ["ReadWriteOnce"]
-
-#     capacity = {
-#       storage = "1024Gi"
-#     }
-
-#     persistent_volume_source {
-#       csi {
-#         driver = "driver.longhorn.io"
-#         volume_handle = kubernetes_manifest.jellyfin_media_longhorn_volume.manifest.metadata.name
-#       }
-#     }
-#   }
-# }
-
-# resource "kubernetes_persistent_volume_claim_v1" "jellyfin_media" {
-#   metadata {
-#     name = "jellyfin-media-pvc"
-#     namespace = kubernetes_namespace_v1.jellyfin.id
-#   }
-#   spec {
-#     volume_name = kubernetes_persistent_volume_v1.jellyfin_media.metadata.0.name
-#     # storage_class_name = "longhorn"
-#     access_modes = ["ReadWriteOnce"]
-#     resources {
-#       requests = {
-#         storage = "1024Gi"
-#       }
-#     }
-    
-#   }
-# }
 
 #-------------------------------------------------------
 # Jellyfin - Helm & Config
 #-------------------------------------------------------
 resource "local_file" "jellyfin_values" {
-  content = templatefile("${path.module}/helm/templates/jellyfin.tftpl", {})
+  content  = templatefile("${path.module}/helm/templates/jellyfin.tftpl", {})
   filename = "${path.module}/helm/tmp/jellyfin.yml"
 }
 
-# resource "helm_release" "jellyfin" {
-#   name              = "jellyfin"
-#   namespace         = kubernetes_namespace_v1.jellyfin.id
-#   create_namespace  = false
-#   repository        = "https://jellyfin.github.io/jellyfin-helm"
-#   chart             = "jellyfin"
-#   version           = "3.2.0"
-#   dependency_update = true
+# https://github.com/jellyfin/jellyfin-helm/tree/master/charts/jellyfin
+resource "helm_release" "jellyfin" {
+  name              = "jellyfin"
+  namespace         = kubernetes_namespace_v1.jellyfin.id
+  create_namespace  = false
+  repository        = "https://jellyfin.github.io/jellyfin-helm"
+  chart             = "jellyfin"
+  version           = "3.2.0"
+  dependency_update = true
 
-#   values = [
-#     local_file.jellyfin_values.content
-#   ]
-# }
+  values = [
+    local_file.jellyfin_values.content
+  ]
+}
 
 #-------------------------------------------------------
 # Jellyfin - Ingress
 #-------------------------------------------------------
+resource "kubernetes_manifest" "jellyfin_ingressroute" {
+  depends_on = [helm_release.traefik]
+  manifest = {
+    apiVersion = "traefik.io/v1alpha1"
+    kind       = "IngressRoute"
+
+    metadata = {
+      name      = "jellyfin"
+      namespace = kubernetes_namespace_v1.jellyfin.id
+
+      annotations = {}
+    }
+
+    spec = {
+      entryPoints = [
+        "web",
+        "websecure",
+      ]
+
+      routes = [
+        {
+          match = "Host(`media.${var.dns_zone}`)"
+          kind  = "Rule"
+
+          services = [
+            {
+              name = "jellyfin"
+              port = 8096
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
