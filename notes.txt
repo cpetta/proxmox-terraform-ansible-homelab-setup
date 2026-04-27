@@ -222,3 +222,5 @@ terraform state mv "talos_machine_configuration_apply.storage[2]" "talos_machine
 
 https://hub.docker.com/r/erichough/nfs-server/#starting-the-server
 https://github.com/ehough/docker-nfs-server
+
+terraform state mv "kubernetes_persistent_volume_claim_v1.traefik_config" "kubernetes_persistent_volume_claim_v1.traefik_data"

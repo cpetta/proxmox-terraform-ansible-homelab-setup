@@ -43,6 +43,7 @@ variable "local" {
   default = true
 }
 
+variable "admin_email" {}
 variable "dns_zone" {}
 variable "dns_tsig_secret" {}
 variable "ssh_public_key" {}
@@ -909,7 +910,7 @@ resource "proxmox_virtual_environment_vm" "k8s" {
 }
 
 #-------------------------------------------------------
-# Kubernetes MetalLB - for ingress
+# Kubernetes - MetalLB (ingress)
 #-------------------------------------------------------
 resource "kubernetes_namespace_v1" "metallb" {
   metadata {
@@ -964,6 +965,76 @@ resource "terraform_data" "apply_metallb_configs" {
 }
 
 #-------------------------------------------------------
+# Kubernetes - Traefik PVC
+#-------------------------------------------------------
+resource "kubernetes_manifest" "traefik_data_longhorn_volume" {
+  manifest = {
+    apiVersion = "longhorn.io/v1beta2"
+    kind       = "Volume"
+
+    metadata = {
+      name      = "traefik-data-volume"
+      namespace = "longhorn-system"
+    }
+
+    spec = {
+      size             = "1073741824" # 1Gi in bytes
+      numberOfReplicas = 3
+      frontend         = "blockdev"
+      accessMode       = "rwx"
+      dataLocality     = "disabled"
+    }
+  }
+}
+
+resource "kubernetes_persistent_volume_v1" "traefik_data" {
+  depends_on = [kubernetes_manifest.traefik_data_longhorn_volume]
+  metadata {
+    name = "traefik-data"
+  }
+
+  spec {
+    storage_class_name = "longhorn"
+    access_modes       = ["ReadWriteMany"]
+
+    capacity = {
+      storage = "1Gi"
+    }
+
+    persistent_volume_source {
+      csi {
+        driver        = "driver.longhorn.io"
+        volume_handle = kubernetes_manifest.traefik_data_longhorn_volume.manifest.metadata.name
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      metadata
+    ]
+  }
+}
+
+resource "kubernetes_persistent_volume_claim_v1" "traefik_data" {
+  depends_on = [kubernetes_persistent_volume_v1.traefik_data]
+  metadata {
+    name      = "traefik-data-pvc"
+    namespace = kubernetes_namespace_v1.traefik.id
+  }
+  spec {
+    volume_name = kubernetes_persistent_volume_v1.traefik_data.metadata.0.name
+    # storage_class_name = "longhorn"
+    access_modes = ["ReadWriteMany"]
+    resources {
+      requests = {
+        storage = "1Gi"
+      }
+    }
+  }
+}
+
+
+#-------------------------------------------------------
 # Kubernetes - Traefik
 #-------------------------------------------------------
 resource "kubernetes_namespace_v1" "traefik" {
@@ -1013,12 +1084,14 @@ resource "kubernetes_secret_v1" "traefik_tls_secret" {
 resource "local_file" "traefik_values" {
   content = templatefile("${path.module}/helm/templates/traefik.tftpl", {
     dns_zone = var.dns_zone,
+    admin_email = var.admin_email,
     password = var.traefik_password,
   })
   filename = "${path.module}/helm/tmp/traefik.yml"
 }
 
 resource "helm_release" "traefik" {
+  depends_on = [kubernetes_persistent_volume_claim_v1.traefik_data]
   name              = "traefik"
   namespace         = kubernetes_namespace_v1.traefik.id
   create_namespace  = false
@@ -1029,6 +1102,220 @@ resource "helm_release" "traefik" {
   values = [
     local_file.traefik_values.content
   ]
+}
+
+#-------------------------------------------------------
+# NFS
+#-------------------------------------------------------
+locals {
+  // Jellyfin Media
+  # nfs_namespace = kubernetes_namespace_v1.jellyfin.id
+  # nfs_export = "/etc/jellyfin-media *(rw,sync,no_subtree_check,fsid=0)"
+  # nfs_volume_name = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
+  # nfs_mount = "/etc/jellyfin-media"
+  
+  // Jellyfin Config
+  # nfs_namespace = kubernetes_namespace_v1.jellyfin.id
+  # nfs_export = "/etc/jellyfin-config *(rw,sync,no_subtree_check,fsid=0)"
+  # nfs_volume_name = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
+  # nfs_mount = "/etc/jellyfin-config"
+  
+  // Traefik Data
+  nfs_namespace = kubernetes_namespace_v1.traefik.id
+  nfs_export = "/etc/traefik_data *(rw,sync,no_subtree_check,fsid=0)"
+  nfs_volume_name = kubernetes_persistent_volume_claim_v1.traefik_data.metadata.0.name
+  nfs_mount = "/etc/traefik_data"
+}
+
+resource "kubernetes_deployment_v1" "nfs_server" {
+  metadata {
+    name      = "nfs-server"
+    namespace = local.nfs_namespace
+  }
+
+  spec {
+    replicas = 0
+    selector {
+      match_labels = {
+        app = "nfs-server"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "nfs-server"
+        }
+      }
+
+      spec {
+        container {
+          name  = "nfs-server"
+          image = "erichough/nfs-server"
+
+          env {
+            name  = "NFS_PORT"
+            value = "32049"
+          }
+
+          # env {
+          #   name  = "NFS_LOG_LEVEL"
+          #   value = "DEBUG"
+          # }
+
+          env { // Traefik Data
+            name = "NFS_EXPORT_0"
+            value = local.nfs_export
+          }
+
+          port {
+            name           = "nfs-tcp"
+            container_port = 32049
+            protocol       = "TCP"
+          }
+
+          port {
+            name           = "nfs-udp"
+            container_port = 32049
+            protocol       = "UDP"
+          }
+
+          # Enable these ports for NFSv3 support
+          # port {
+          #   name = "mountd-tcp"
+          #   container_port = 111
+          #   protocol = "TCP"
+          # }
+
+          # port {
+          #   name = "mountd-udp"
+          #   container_port = 111
+          #   protocol = "UDP"
+          # }
+
+          # port {
+          #   name = "statd-in-tcp"
+          #   container_port = 32765
+          #   protocol = "TCP"
+          # }
+
+          # port {
+          #   name = "statd-in-udp"
+          #   container_port = 32765
+          #   protocol = "UDP"
+          # }
+
+          # port {
+          #   name = "statd-out-tcp"
+          #   container_port = 32767
+          #   protocol = "TCP"
+          # }
+
+          # port {
+          #   name = "statd-out-udp"
+          #   container_port = 32767
+          #   protocol = "UDP"
+          # }
+
+          security_context {
+            privileged = true
+
+            capabilities {
+              add = [
+                "SYS_ADMIN",
+                "CAP_SYS_ADMIN",
+              ]
+            }
+          }
+
+          volume_mount {
+            name       = kubernetes_persistent_volume_claim_v1.traefik_data.metadata.0.name
+            mount_path = local.nfs_mount
+          }
+
+        }
+
+        volume {
+          name       = local.nfs_volume_name
+          persistent_volume_claim {
+            claim_name = local.nfs_volume_name
+          }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_service_v1" "nfs_service" {
+  metadata {
+    name      = "nfs"
+    namespace = local.nfs_namespace
+  }
+
+  spec {
+    selector = {
+      app = "nfs-server"
+    }
+
+    port {
+      name        = "nfs-tcp"
+      port        = 2049
+      protocol    = "TCP"
+      target_port = 32049
+    }
+
+    port {
+      name        = "nfs-udp"
+      port        = 2049
+      protocol    = "UDP"
+      target_port = 32049
+    }
+
+    # Enable these ports for NFSv3 support  
+    # port {
+    #   name = "mountd-tcp"
+    #   port = 111
+    #   protocol = "TCP"
+    # }
+
+    # port {
+    #   name = "mountd-udp"
+    #   port = 111
+    #   protocol = "UDP"
+    # }
+
+    # port {
+    #   name = "statd-in-tcp"
+    #   port = 32765
+    #   protocol = "TCP"
+    # }
+
+    # port {
+    #   name = "statd-in-udp"
+    #   port = 32765
+    #   protocol = "UDP"
+    # }
+
+    # port {
+    #   name = "statd-out-tcp"
+    #   port = 32767
+    #   protocol = "TCP"
+    # }
+
+    # port {
+    #   name = "statd-out-udp"
+    #   port = 32767
+    #   protocol = "UDP"
+    # }
+
+    type = "LoadBalancer"
+    load_balancer_ip = "192.168.0.246"
+  }
+  # lifecycle {
+  #   ignore_changes = [
+  #     metadata
+  #   ]
+  # }
 }
 
 #-------------------------------------------------------
@@ -1342,233 +1629,6 @@ resource "kubernetes_persistent_volume_claim_v1" "jellyfin_media" {
       }
     }
 
-  }
-}
-
-#-------------------------------------------------------
-# Kubernetes - NFS server
-#-------------------------------------------------------
-# https://hub.docker.com/r/erichough/nfs-server/#starting-the-server
-resource "kubernetes_deployment_v1" "nfs_server" {
-  metadata {
-    name      = "nfs-server"
-    namespace = kubernetes_namespace_v1.jellyfin.id
-  }
-
-  spec {
-    replicas = 1
-    selector {
-      match_labels = {
-        app = "nfs-server"
-      }
-    }
-
-    template {
-      metadata {
-        labels = {
-          app = "nfs-server"
-        }
-      }
-
-      spec {
-        container {
-          name  = "nfs-server"
-          image = "erichough/nfs-server"
-
-          env {
-            name  = "NFS_PORT"
-            value = "32049"
-          }
-
-          env {
-            name  = "NFS_LOG_LEVEL"
-            value = "DEBUG"
-          }
-
-          # env { // Jellyfin Media
-          #   name  = "NFS_EXPORT_0"
-          #   value = "/etc/jellyfin-media *(rw,sync,no_subtree_check,fsid=0)"
-          # }
-
-          # env { // Jellyfin Config
-          #   name = "NFS_EXPORT_1"
-          #   value = "/etc/jellyfin-config *(rw,sync,no_subtree_check,fsid=0)"
-          # }
-
-          # env { // Lets encrypt
-          #   name = "NFS_EXPORT_2"
-          #   value = "/etc/letsencrypt *(rw,sync,no_subtree_check,fsid=0)"
-          # }
-
-          port {
-            name           = "nfs-tcp"
-            container_port = 32049
-            protocol       = "TCP"
-          }
-
-          port {
-            name           = "nfs-udp"
-            container_port = 32049
-            protocol       = "UDP"
-          }
-
-          # Enable these ports for NFSv3 support
-          # port {
-          #   name = "mountd-tcp"
-          #   container_port = 111
-          #   protocol = "TCP"
-          # }
-
-          # port {
-          #   name = "mountd-udp"
-          #   container_port = 111
-          #   protocol = "UDP"
-          # }
-
-          # port {
-          #   name = "statd-in-tcp"
-          #   container_port = 32765
-          #   protocol = "TCP"
-          # }
-
-          # port {
-          #   name = "statd-in-udp"
-          #   container_port = 32765
-          #   protocol = "UDP"
-          # }
-
-          # port {
-          #   name = "statd-out-tcp"
-          #   container_port = 32767
-          #   protocol = "TCP"
-          # }
-
-          # port {
-          #   name = "statd-out-udp"
-          #   container_port = 32767
-          #   protocol = "UDP"
-          # }
-
-          security_context {
-            privileged = true
-
-            capabilities {
-              add = [
-                "SYS_ADMIN",
-                "CAP_SYS_ADMIN",
-              ]
-            }
-          }
-
-          # volume_mount { // Jellyfin Media
-          #   name       = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
-          #   mount_path = "/etc/jellyfin-media"
-          # }
-
-          # volume_mount { // Jellyfin Config
-          #   name       = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
-          #   mount_path = "/etc/jellyfin-config"
-          # }
-
-          # volume_mount { // Traefik 
-          #   name       = // Todo
-          #   mount_path = "/etc/letsencrypt"
-          # }
-
-        }
-        # volume { // Jellyfin Media
-        #   name = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
-        #   persistent_volume_claim {
-        #     claim_name = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
-        #   }
-        # }
-
-        # volume { // Jellyfin Config
-        #   name       = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
-        #   persistent_volume_claim {
-        #     claim_name = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
-        #   }
-        # }
-
-        # volume { // Traefik Config
-        #   name       = // todo
-        #   persistent_volume_claim {
-        #     claim_name = // todo
-        #   }
-        # }
-      }
-    }
-  }
-}
-
-resource "kubernetes_service_v1" "nfs_service" {
-  metadata {
-    name      = "nfs"
-    namespace = kubernetes_namespace_v1.jellyfin.id
-  }
-
-  spec {
-    selector = {
-      app = "nfs-server"
-    }
-
-    port {
-      name        = "nfs-tcp"
-      port        = 2049
-      protocol    = "TCP"
-      target_port = 32049
-    }
-
-    port {
-      name        = "nfs-udp"
-      port        = 2049
-      protocol    = "UDP"
-      target_port = 32049
-    }
-
-    # Enable these ports for NFSv3 support  
-    # port {
-    #   name = "mountd-tcp"
-    #   port = 111
-    #   protocol = "TCP"
-    # }
-
-    # port {
-    #   name = "mountd-udp"
-    #   port = 111
-    #   protocol = "UDP"
-    # }
-
-    # port {
-    #   name = "statd-in-tcp"
-    #   port = 32765
-    #   protocol = "TCP"
-    # }
-
-    # port {
-    #   name = "statd-in-udp"
-    #   port = 32765
-    #   protocol = "UDP"
-    # }
-
-    # port {
-    #   name = "statd-out-tcp"
-    #   port = 32767
-    #   protocol = "TCP"
-    # }
-
-    # port {
-    #   name = "statd-out-udp"
-    #   port = 32767
-    #   protocol = "UDP"
-    # }
-
-    type = "LoadBalancer"
-  }
-  lifecycle {
-    ignore_changes = [
-      metadata
-    ]
   }
 }
 

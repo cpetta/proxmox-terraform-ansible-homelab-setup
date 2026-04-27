@@ -82,6 +82,41 @@ gateway:
           name: local-selfsigned-tls  # the Secret we created before the installation
           group: ""
 
+additionalArguments:
+  - "--certificatesresolvers.le.acme.email=admin@chloepetta.net"
+  - "--certificatesresolvers.le.acme.storage=/data/acme.json"
+  # - "--certificatesresolvers.le.acme.dnschallenge.provider=cloudflare"
+  # - "--certificatesresolvers.le.acme.dnschallenge.cloudflare_api_email= " 
+
+persistence:
+  enabled: true
+  existingClaim: traefik-data-pvc
+
+# certificatesResolvers:
+#   cloudflare:
+#     acme:
+#       caServer: https://acme-v02.api.letsencrypt.org/directory # production
+#       email: "${admin_email}"
+#       storage: /letsencrypt/acme.json
+#       dnsChallenge:
+#         provider: cloudflare
+#         # disablePropagationCheck: true
+#         resolvers:
+#           - "1.1.1.1:53"
+#           - "1.0.0.1:53"
+
+#   staging:
+#     acme:
+#       caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
+#       email: "${admin_email}"
+#       storage: /letsencrypt/acme_staging.json
+#       dnsChallenge:
+#         provider: cloudflare
+#         # disablePropagationCheck: true
+#         resolvers:
+#           - "1.1.1.1:53"
+#           - "1.0.0.1:53"
+
 # Enable Observability
 logs:
   general:
