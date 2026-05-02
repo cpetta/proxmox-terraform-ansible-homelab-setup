@@ -32,6 +32,9 @@ terraform {
       source  = "loafoe/htpasswd"
       version = "2.1.0"
     }
+    kubectl = {
+      source  = "alekc/kubectl"
+    }
   }
 }
 
@@ -58,6 +61,8 @@ variable "cipassword" {}
 variable "cipassword_hash" {}
 variable "traefik_password" {}
 variable "longhorn_password" {}
+variable "cloudflare_api_email" {}
+variable "cloudflare_token" {}
 
 variable "gateway_ip" {}
 
@@ -169,6 +174,10 @@ provider "helm" {
   kubernetes = {
     config_path = local_file.kubeconfig.filename
   }
+}
+
+provider "kubectl" {
+  config_path = local_file.kubeconfig.filename
 }
 
 provider "talos" {}
@@ -981,7 +990,7 @@ resource "kubernetes_manifest" "traefik_data_longhorn_volume" {
       size             = "1073741824" # 1Gi in bytes
       numberOfReplicas = 3
       frontend         = "blockdev"
-      accessMode       = "rwx"
+      accessMode       = "rwx" // "rwo"
       dataLocality     = "disabled"
     }
   }
@@ -995,7 +1004,7 @@ resource "kubernetes_persistent_volume_v1" "traefik_data" {
 
   spec {
     storage_class_name = "longhorn"
-    access_modes       = ["ReadWriteMany"]
+    access_modes       = ["ReadWriteMany"] // ["ReadWriteOnce"]
 
     capacity = {
       storage = "1Gi"
@@ -1024,7 +1033,7 @@ resource "kubernetes_persistent_volume_claim_v1" "traefik_data" {
   spec {
     volume_name = kubernetes_persistent_volume_v1.traefik_data.metadata.0.name
     # storage_class_name = "longhorn"
-    access_modes = ["ReadWriteMany"]
+    access_modes = ["ReadWriteMany"] // ["ReadWriteOnce"]
     resources {
       requests = {
         storage = "1Gi"
@@ -1083,15 +1092,17 @@ resource "kubernetes_secret_v1" "traefik_tls_secret" {
 
 resource "local_file" "traefik_values" {
   content = templatefile("${path.module}/helm/templates/traefik.tftpl", {
-    dns_zone = var.dns_zone,
-    admin_email = var.admin_email,
-    password = var.traefik_password,
+    dns_zone             = var.dns_zone,
+    admin_email          = var.admin_email,
+    password             = var.traefik_password,
+    cloudflare_api_email = var.cloudflare_api_email,
+    cloudflare_token     = var.cloudflare_token,
   })
   filename = "${path.module}/helm/tmp/traefik.yml"
 }
 
 resource "helm_release" "traefik" {
-  depends_on = [kubernetes_persistent_volume_claim_v1.traefik_data]
+  # depends_on = [kubernetes_persistent_volume_claim_v1.traefik_data]
   name              = "traefik"
   namespace         = kubernetes_namespace_v1.traefik.id
   create_namespace  = false
@@ -1105,26 +1116,271 @@ resource "helm_release" "traefik" {
 }
 
 #-------------------------------------------------------
+# Kubernetes - Cert Manager
+#-------------------------------------------------------
+resource "kubernetes_namespace_v1" "cert-manager" {
+  metadata {
+    name = "cert-manager"
+    labels = {}
+  }
+}
+
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "oci://quay.io/jetstack/charts"
+  chart            = "cert-manager"
+  namespace        = kubernetes_namespace_v1.cert-manager.id
+  version          = "v1.20.2"
+
+  set = [
+    {
+      name  = "crds.enabled"
+      value = "true"
+    },
+    {
+      name = "extraArgs"
+      value = "{--dns01-recursive-nameservers-only,--dns01-recursive-nameservers=1.1.1.1:53,1.0.0.1:53}"
+    }
+  ]
+}
+
+#-------------------------------------------------------
+# Cert Manager - Cluster Issuer
+#-------------------------------------------------------
+resource "kubectl_manifest" "cert_manager_cluster_issuer_cloudflare_staging" {
+  yaml_body = yamlencode({
+    apiVersion = "cert-manager.io/v1"
+    kind = "ClusterIssuer"
+    metadata = {
+      name = "cloudflare-staging"
+    }
+    spec = {
+      acme = {
+        email = var.admin_email
+        privateKeySecretRef = {
+          name = "cert-manager-private-key"
+        }
+        server = "https://acme-v02.api.letsencrypt.org/directory"
+        solvers = [
+          {
+            dns01 = {
+              cloudflare = {
+                apiKeySecretRef = {
+                  key = "api-token"
+                  name = "cloudflare-api-key-secret"
+                }
+                email = var.cloudflare_api_email
+              }
+            }
+          },
+        ]
+      }
+    }
+  })
+}
+
+resource "kubectl_manifest" "cert_manager_cluster_issuer_cloudflare" {
+  yaml_body = yamlencode({
+    apiVersion = "cert-manager.io/v1"
+    kind = "ClusterIssuer"
+    metadata = {
+      name = "cloudflare"
+    }
+    spec = {
+      acme = {
+        email = var.admin_email
+        # preferredChain = "ISRG Root X1"
+        privateKeySecretRef = {
+          name = "cloudflare-private-key"
+        }
+        server = "https://acme-v02.api.letsencrypt.org/directory"
+        solvers = [
+          {
+            dns01 = {
+              cloudflare = {
+                apiKeySecretRef = {
+                  key = var.cloudflare_token
+                  name = "cloudflare-api-key-secret"
+                }
+                email = var.cloudflare_api_email
+              }
+            }
+            # selector = {
+            #   dnsZones = [
+            #     "*.${var.dns_zone}",
+            #     var.dns_zone,
+            #   ]
+            # }
+          },
+        ]
+      }
+    }
+  })
+}
+
+#-------------------------------------------------------
+# Cert Manager - Cloudflare provider
+#-------------------------------------------------------
+resource "kubernetes_secret_v1" "cloudflare_api_key" {
+  depends_on = [ helm_release.cert_manager ]
+  metadata {
+    name = "cloudflare-api-token-secret"
+    namespace = kubernetes_namespace_v1.traefik.id
+  }
+  type = "Opaque"
+  data = {
+    api-token = var.cloudflare_token
+  }
+}
+
+resource "kubernetes_manifest" "cloudflare_le_staging_cert_issuer" {
+  depends_on = [ kubernetes_secret_v1.cloudflare_api_key ]
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Issuer"
+    metadata = {
+      name      = "cloudflare-staging"
+      namespace = kubernetes_namespace_v1.traefik.id
+    }
+    spec = {
+      acme = {
+        server = "https://acme-staging-v02.api.letsencrypt.org/directory" # staging
+        email  = var.admin_email
+        privateKeySecretRef = {
+          name = "cloudflare-staging-key"
+        }
+        solvers = [
+          {
+            dns01 = {
+              cloudflare = {
+                apiTokenSecretRef = {
+                  name = kubernetes_secret_v1.cloudflare_api_key.metadata.0.name
+                  key  = "api-token"
+                }
+              }
+              recursiveNameservers = [
+                "1.1.1.1:53",
+                "1.0.0.1:53",
+              ]
+              recursiveNameserversOnly = true
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
+resource "kubernetes_manifest" "cloudflare_le_prod_cert_issuer" {
+  depends_on = [ kubernetes_secret_v1.cloudflare_api_key ]
+  manifest = {
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Issuer"
+    metadata = {
+      name      = "cloudflare-prod"
+      namespace = kubernetes_namespace_v1.traefik.id
+    }
+    spec = {
+      acme = {
+        server = "https://acme-v02.api.letsencrypt.org/directory"
+        email  = var.admin_email
+        privateKeySecretRef = {
+          name = "cloudflare-prod-key"
+        }
+        solvers = [
+          {
+            dns01 = {
+              cloudflare = {
+                apiTokenSecretRef = {
+                  name = kubernetes_secret_v1.cloudflare_api_key.metadata.0.name
+                  key  = "api-token"
+                }
+              }
+              recursiveNameservers = [
+                "1.1.1.1:53",
+                "1.0.0.1:53",
+              ]
+              recursiveNameserversOnly = true
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
+#-------------------------------------------------------
+# TLS Certificate
+#-------------------------------------------------------
+resource "kubectl_manifest" "wildcard_certificate" {
+  # wait_for {
+  #   field {
+  #     key = "status.containerStatuses.[0].ready"
+  #     value = "true"
+  #   }
+  #   field {
+  #     key = "status.phase"
+  #     value = "Running"
+  #   }
+  #   field {
+  #     key = "status.podIP"
+  #     value = "^(\\d+(\\.|$)){4}"
+  #     value_type = "regex"
+  #   }
+  #   condition {
+  #     type = "ContainersReady"
+  #     status = "True"
+  #   }
+  #   condition {
+  #     type = "Ready"
+  #     status = "True"
+  #   }
+  # }
+  yaml_body = yamlencode({
+    apiVersion = "cert-manager.io/v1"
+    kind       = "Certificate"
+
+    metadata = {
+      name      = "wildcard-cert"
+      namespace = kubernetes_namespace_v1.traefik.id
+    }
+
+    spec = {
+      secretName = "wildcard-cert"
+      commonName = "*.${var.dns_zone}"
+      dnsNames = [
+        var.dns_zone,
+        "*.${var.dns_zone}",
+      ]
+      issuerRef = {
+        name = kubernetes_manifest.cloudflare_le_prod_cert_issuer.manifest.metadata.name
+        kind = "Issuer"
+      }
+    }
+  })
+}
+
+#-------------------------------------------------------
 # NFS
 #-------------------------------------------------------
 locals {
   // Jellyfin Media
   # nfs_namespace = kubernetes_namespace_v1.jellyfin.id
-  # nfs_export = "/etc/jellyfin-media *(rw,sync,no_subtree_check,fsid=0)"
+  # nfs_export = "/etc/jellyfin-media *(rw,sync,no_subtree_check,no_acl,no_root_squash,fsid=0)"
   # nfs_volume_name = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
   # nfs_mount = "/etc/jellyfin-media"
-  
+
   // Jellyfin Config
   # nfs_namespace = kubernetes_namespace_v1.jellyfin.id
   # nfs_export = "/etc/jellyfin-config *(rw,sync,no_subtree_check,fsid=0)"
   # nfs_volume_name = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
   # nfs_mount = "/etc/jellyfin-config"
-  
+
   // Traefik Data
-  nfs_namespace = kubernetes_namespace_v1.traefik.id
-  nfs_export = "/etc/traefik_data *(rw,sync,no_subtree_check,fsid=0)"
-  nfs_volume_name = kubernetes_persistent_volume_claim_v1.traefik_data.metadata.0.name
-  nfs_mount = "/etc/traefik_data"
+  nfs_namespace   = kubernetes_namespace_v1.traefik.id
+  nfs_export      = "/mnt/traefik *(rw,sync,no_subtree_check,no_acl,fsid=0)"
+  nfs_volume_name = kubernetes_persistent_volume_claim_v1.traefik_data.metadata.0.name // "traefik-data-pvc"
+  nfs_mount       = "/mnt/traefik"
 }
 
 resource "kubernetes_deployment_v1" "nfs_server" {
@@ -1134,7 +1390,7 @@ resource "kubernetes_deployment_v1" "nfs_server" {
   }
 
   spec {
-    replicas = 0
+    replicas = 1
     selector {
       match_labels = {
         app = "nfs-server"
@@ -1164,7 +1420,7 @@ resource "kubernetes_deployment_v1" "nfs_server" {
           # }
 
           env { // Traefik Data
-            name = "NFS_EXPORT_0"
+            name  = "NFS_EXPORT_0"
             value = local.nfs_export
           }
 
@@ -1218,7 +1474,7 @@ resource "kubernetes_deployment_v1" "nfs_server" {
           # }
 
           security_context {
-            privileged = true
+            # privileged = true
 
             capabilities {
               add = [
@@ -1229,14 +1485,14 @@ resource "kubernetes_deployment_v1" "nfs_server" {
           }
 
           volume_mount {
-            name       = kubernetes_persistent_volume_claim_v1.traefik_data.metadata.0.name
+            name       = local.nfs_volume_name
             mount_path = local.nfs_mount
           }
 
         }
 
         volume {
-          name       = local.nfs_volume_name
+          name = local.nfs_volume_name
           persistent_volume_claim {
             claim_name = local.nfs_volume_name
           }
@@ -1308,14 +1564,14 @@ resource "kubernetes_service_v1" "nfs_service" {
     #   protocol = "UDP"
     # }
 
-    type = "LoadBalancer"
+    type             = "LoadBalancer"
     load_balancer_ip = "192.168.0.246"
   }
-  # lifecycle {
-  #   ignore_changes = [
-  #     metadata
-  #   ]
-  # }
+  lifecycle {
+    ignore_changes = [
+      metadata
+    ]
+  }
 }
 
 #-------------------------------------------------------
@@ -1447,6 +1703,7 @@ resource "kubernetes_manifest" "longhorn_ingressroute" {
 
       annotations = {
         "traefik.ingress.kubernetes.io/router.middlewares" = "longhorn-system-longhorn-auth@kubernetescrd,longhorn-system-longhorn-buffering@kubernetescrd"
+        "cert-manager.io/cluster-issuer" = "cloudflare-staging"
       }
     }
 
@@ -1501,7 +1758,7 @@ resource "kubernetes_manifest" "jellyfin_config_longhorn_volume" {
     kind       = "Volume"
 
     metadata = {
-      name      = "jellyfin-config-volume"
+      name      = "jellyfin-config-volume-rwo"
       namespace = "longhorn-system"
     }
 
@@ -1509,7 +1766,7 @@ resource "kubernetes_manifest" "jellyfin_config_longhorn_volume" {
       size             = "10737418240" # 10Gi in bytes
       numberOfReplicas = 2
       frontend         = "blockdev"
-      accessMode       = "rwx"
+      accessMode       = "rwo"
       dataLocality     = "disabled"
     }
   }
@@ -1523,7 +1780,7 @@ resource "kubernetes_persistent_volume_v1" "jellyfin_config" {
 
   spec {
     storage_class_name = "longhorn"
-    access_modes       = ["ReadWriteMany"]
+    access_modes       = ["ReadWriteOnce"]
 
     capacity = {
       storage = "10Gi"
@@ -1544,6 +1801,7 @@ resource "kubernetes_persistent_volume_v1" "jellyfin_config" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "jellyfin_config" {
+  depends_on = [kubernetes_persistent_volume_v1.jellyfin_config]
   metadata {
     name      = "jellyfin-config-pvc"
     namespace = kubernetes_namespace_v1.jellyfin.id
@@ -1551,13 +1809,12 @@ resource "kubernetes_persistent_volume_claim_v1" "jellyfin_config" {
   spec {
     volume_name = kubernetes_persistent_volume_v1.jellyfin_config.metadata.0.name
     # storage_class_name = "longhorn"
-    access_modes = ["ReadWriteMany"]
+    access_modes = ["ReadWriteOnce"]
     resources {
       requests = {
         storage = "10Gi"
       }
     }
-
   }
 }
 
@@ -1571,7 +1828,7 @@ resource "kubernetes_manifest" "jellyfin_media_longhorn_volume" {
     kind       = "Volume"
 
     metadata = {
-      name      = "jellyfin-media-volume"
+      name      = "jellyfin-media-volume-rwo"
       namespace = "longhorn-system"
     }
 
@@ -1579,7 +1836,7 @@ resource "kubernetes_manifest" "jellyfin_media_longhorn_volume" {
       size             = "1099511627776" # 10Gi in bytes
       numberOfReplicas = 1
       frontend         = "blockdev"
-      accessMode       = "rwx"
+      accessMode       = "rwo"
       dataLocality     = "disabled"
     }
   }
@@ -1593,7 +1850,7 @@ resource "kubernetes_persistent_volume_v1" "jellyfin_media" {
 
   spec {
     storage_class_name = "longhorn"
-    access_modes       = ["ReadWriteMany"]
+    access_modes       = ["ReadWriteOnce"]
 
     capacity = {
       storage = "1024Gi"
@@ -1621,7 +1878,7 @@ resource "kubernetes_persistent_volume_claim_v1" "jellyfin_media" {
   spec {
     volume_name = kubernetes_persistent_volume_v1.jellyfin_media.metadata.0.name
     # storage_class_name = "longhorn"
-    access_modes = ["ReadWriteMany"]
+    access_modes = ["ReadWriteOnce"]
     resources {
       requests = {
         # storage = "1024Gi"
@@ -1636,7 +1893,10 @@ resource "kubernetes_persistent_volume_claim_v1" "jellyfin_media" {
 # Jellyfin - Helm & Config
 #-------------------------------------------------------
 resource "local_file" "jellyfin_values" {
-  content  = templatefile("${path.module}/helm/templates/jellyfin.tftpl", {})
+  content = templatefile("${path.module}/helm/templates/jellyfin.tftpl", {
+    config_pvc = kubernetes_persistent_volume_claim_v1.jellyfin_config.metadata.0.name
+    media_pvc  = kubernetes_persistent_volume_claim_v1.jellyfin_media.metadata.0.name
+  })
   filename = "${path.module}/helm/tmp/jellyfin.yml"
 }
 
@@ -1658,37 +1918,68 @@ resource "helm_release" "jellyfin" {
 #-------------------------------------------------------
 # Jellyfin - Ingress
 #-------------------------------------------------------
-resource "kubernetes_manifest" "jellyfin_ingressroute" {
-  depends_on = [helm_release.traefik]
+resource "kubernetes_manifest" "jellyfin_http_route" {
   manifest = {
-    apiVersion = "traefik.io/v1alpha1"
-    kind       = "IngressRoute"
-
+    apiVersion = "gateway.networking.k8s.io/v1"
+    kind = "HTTPRoute"
     metadata = {
-      name      = "jellyfin"
-      namespace = kubernetes_namespace_v1.jellyfin.id
-
-      annotations = {}
+      name = "jellyfin"
+      namespace = "traefik"
     }
-
     spec = {
-      entryPoints = [
-        "web",
-        "websecure",
+      hostnames = [
+        "media.${var.dns_zone}",
       ]
-
-      routes = [
+      parentRefs = [
         {
-          match = "Host(`media.${var.dns_zone}`)"
-          kind  = "Rule"
-
-          services = [
+          name = "traefik-gateway"
+        },
+      ]
+      rules = [
+        {
+          backendRefs = [
             {
               name = "jellyfin"
+              namespace = "jellyfin"
               port = 8096
-            }
+            },
           ]
-        }
+          matches = [
+            {
+              path = {
+                type = "PathPrefix"
+                value = "/"
+              }
+            },
+          ]
+        },
+      ]
+    }
+  }
+}
+
+resource "kubernetes_manifest" "referencegrant_jellyfin_http_route" {
+  manifest = {
+    apiVersion = "gateway.networking.k8s.io/v1beta1"
+    kind = "ReferenceGrant"
+    metadata = {
+      name = "jellyfin"
+      namespace = "jellyfin"
+    }
+    spec = {
+      from = [
+        {
+          group = "gateway.networking.k8s.io"
+          kind = "HTTPRoute"
+          namespace = "traefik"
+        },
+      ]
+      to = [
+        {
+          group = ""
+          kind = "Service"
+          name = "jellyfin"
+        },
       ]
     }
   }

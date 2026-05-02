@@ -1,4 +1,4 @@
-replicaCount: 0
+replicaCount: 1
 
 image:
   pullPolicy: IfNotPresent
@@ -7,20 +7,23 @@ persistence:
   config:
     enabled: true
     accessMode: ReadWriteMany
-    existingClaim: 'jellyfin-config-pvc'
+    existingClaim: '${config_pvc}'
   media:
     enabled: true
     accessMode: ReadWriteMany
-    existingClaim: 'jellyfin-media-pvc'
+    existingClaim: '${media_pvc}'
 
-ingress:
-  enabled: true
-  className: 'traefik'
-  hosts:
-    - host: media.chloepetta.net
-      paths:
-        - path: /
-          pathType: Prefix
+#ingress:
+#  annotations:
+#    traefik.ingress.kubernetes.io/router.entrypoints: web
+#    cert-manager.io/cluster-issuer: cloudflare-staging
+#  enabled: true
+#  className: 'traefik'
+#  hosts:
+#    - host: media.chloepetta.net
+#      paths:
+#        - path: /
+#          pathType: Prefix
 
 resources:
   limits:

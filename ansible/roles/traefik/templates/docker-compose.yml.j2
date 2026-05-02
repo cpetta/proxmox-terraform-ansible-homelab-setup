@@ -7,8 +7,8 @@ services:
       - no-new-privileges:true
 
     environment:
-    - CLOUDFLARE_EMAIL={{ configurations.cloudflare_api_email }}
-    - CF_DNS_API_TOKEN={{ configurations.cloudflare_token }}
+      - CLOUDFLARE_EMAIL={{ configurations.cloudflare_api_email }}
+      - CF_DNS_API_TOKEN={{ configurations.cloudflare_token }}
 
     networks:
       - proxy

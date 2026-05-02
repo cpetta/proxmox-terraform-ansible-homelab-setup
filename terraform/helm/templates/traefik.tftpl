@@ -64,58 +64,61 @@ providers:
 
 ## Gateway Listeners
 gateway:
+  metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: cloudflare-staging
   listeners:
     web:           # HTTP listener that matches entryPoint `web`
       port: 80
       protocol: HTTP
+      allowRoutes:
+        namespaces:
+          from: All
       namespacePolicy:
         from: All
 
     websecure:         # HTTPS listener that matches entryPoint `websecure`
       port: 443
       protocol: HTTPS  # TLS terminates inside Traefik
+      allowRoutes:
+        namespaces:
+          from: All
       namespacePolicy:
         from: All
       mode: Terminate
       certificateRefs:    
         - kind: Secret
-          name: local-selfsigned-tls  # the Secret we created before the installation
+          name: wildcard-cert  # the Secret we created before the installation
+          # name: cloudflare-staging  # the Secret we created before the installation
+          # name: local-selfsigned-tls  # the Secret we created before the installation
           group: ""
-
-additionalArguments:
-  - "--certificatesresolvers.le.acme.email=admin@chloepetta.net"
-  - "--certificatesresolvers.le.acme.storage=/data/acme.json"
-  # - "--certificatesresolvers.le.acme.dnschallenge.provider=cloudflare"
-  # - "--certificatesresolvers.le.acme.dnschallenge.cloudflare_api_email= " 
 
 persistence:
   enabled: true
   existingClaim: traefik-data-pvc
+  path: /mnt/traefik
 
-# certificatesResolvers:
-#   cloudflare:
-#     acme:
-#       caServer: https://acme-v02.api.letsencrypt.org/directory # production
-#       email: "${admin_email}"
-#       storage: /letsencrypt/acme.json
-#       dnsChallenge:
-#         provider: cloudflare
-#         # disablePropagationCheck: true
-#         resolvers:
-#           - "1.1.1.1:53"
-#           - "1.0.0.1:53"
-
-#   staging:
-#     acme:
-#       caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging
-#       email: "${admin_email}"
-#       storage: /letsencrypt/acme_staging.json
-#       dnsChallenge:
-#         provider: cloudflare
-#         # disablePropagationCheck: true
-#         resolvers:
-#           - "1.1.1.1:53"
-#           - "1.0.0.1:53"
+# Referenced from
+# https://github.com/traefik/traefik-helm-chart/blob/master/EXAMPLES.md#use-traefik-native-lets-encrypt-integration-without-cert-manager
+deployment:
+  initContainers:
+    - name: volume-permissions
+      image: busybox:latest
+      command: [
+        "sh",
+        "-c",
+        "mkdir -p /mnt/traefik/data",
+        "touch /mnt/traefik/data/acme.json",
+        "chmod -v 600 /mnt/traefik/data/acme.json",
+        "touch /mnt/traefik/data/acme_staging.json",
+        "chmod -v 600 /mnt/traefik/data/acme_staging.json",
+      ]
+      volumeMounts:
+      - mountPath: /mnt/traefik
+        name: data
+podSecurityContext:
+  fsGroup: 65532
+  fsGroupChangePolicy: "OnRootMismatch"
 
 # Enable Observability
 logs:

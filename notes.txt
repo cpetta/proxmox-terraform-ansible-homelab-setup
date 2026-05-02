@@ -224,3 +224,13 @@ https://hub.docker.com/r/erichough/nfs-server/#starting-the-server
 https://github.com/ehough/docker-nfs-server
 
 terraform state mv "kubernetes_persistent_volume_claim_v1.traefik_config" "kubernetes_persistent_volume_claim_v1.traefik_data"
+
+How to get logs from an initcontainer
+kubectl logs -n traefik traefik-6658c5b7c5-mcvbb -c volume-permissions
+
+
+Debugging cert manager
+https://cert-manager.io/docs/troubleshooting/
+https://cert-manager.io/docs/troubleshooting/acme/
+kubectl get issuers -A
+https://cert-manager.io/docs/configuration/acme/dns01/
