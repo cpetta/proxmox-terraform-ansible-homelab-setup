@@ -13,18 +13,6 @@ persistence:
     accessMode: ReadWriteMany
     existingClaim: '${media_pvc}'
 
-#ingress:
-#  annotations:
-#    traefik.ingress.kubernetes.io/router.entrypoints: web
-#    cert-manager.io/cluster-issuer: cloudflare-staging
-#  enabled: true
-#  className: 'traefik'
-#  hosts:
-#    - host: media.chloepetta.net
-#      paths:
-#        - path: /
-#          pathType: Prefix
-
 resources:
   limits:
     cpu: 2

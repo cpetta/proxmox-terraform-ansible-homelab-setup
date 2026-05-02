@@ -1116,7 +1116,7 @@ resource "helm_release" "traefik" {
 }
 
 #-------------------------------------------------------
-# Kubernetes - Cert Manager
+# Cert Manager - helm
 #-------------------------------------------------------
 resource "kubernetes_namespace_v1" "cert-manager" {
   metadata {
@@ -1310,7 +1310,7 @@ resource "kubernetes_manifest" "cloudflare_le_prod_cert_issuer" {
 }
 
 #-------------------------------------------------------
-# TLS Certificate
+# Cert Manager - TLS Certificate
 #-------------------------------------------------------
 resource "kubectl_manifest" "wildcard_certificate" {
   # wait_for {
@@ -1361,7 +1361,7 @@ resource "kubectl_manifest" "wildcard_certificate" {
 }
 
 #-------------------------------------------------------
-# NFS
+# NFS - For Debug
 #-------------------------------------------------------
 locals {
   // Jellyfin Media
@@ -1575,17 +1575,6 @@ resource "kubernetes_service_v1" "nfs_service" {
 }
 
 #-------------------------------------------------------
-# Kubernetes Dashboard - Currently installed desktop
-#-------------------------------------------------------
-# resource "helm_release" "headlamp" {
-#   name              = "headlamp"
-#   namespace         = "kube-system"
-#   dependency_update = true
-#   repository        = "https://kubernetes-sigs.github.io/headlamp/"
-#   chart             = "headlamp"
-# }
-
-#-------------------------------------------------------
 # Kubernetes - Metrics
 #-------------------------------------------------------
 # resource "kubernetes_namespace_v1" "metrics" {
@@ -1640,37 +1629,6 @@ resource "helm_release" "longhorn" {
 resource "htpasswd_password" "longhorn" {
   password = var.longhorn_password
 }
-
-# resource "kubernetes_secret_v1" "longhorn_auth" {
-#   metadata {
-#     name      = "basic-auth"
-#     namespace = kubernetes_namespace_v1.storage.id
-#   }
-
-#   type = "Opaque"
-#   data = {
-#     auth = "admin:${htpasswd_password.longhorn.apr1}"
-#   }
-# }
-
-# resource "kubernetes_manifest" "longhorn_auth_middleware" {
-#   depends_on = [ kubernetes_namespace_v1.storage ]
-#   manifest = {
-#     apiVersion = "traefik.io/v1alpha1"
-#     kind       = "Middleware"
-
-#     metadata = {
-#       name      = "longhorn-auth"
-#       namespace = "longhorn-system"
-#     }
-
-#     spec = {
-#       basicAuth = {
-#         secret = "basic-auth"
-#       }
-#     }
-#   }
-# }
 
 resource "kubernetes_manifest" "longhorn_buffering_middleware" {
   depends_on = [kubernetes_namespace_v1.storage]
