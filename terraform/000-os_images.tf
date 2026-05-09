@@ -41,7 +41,7 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_cloud_image" {
 
 locals {
   # talos_version_latest = element(data.talos_image_factory_versions.this.talos_versions, length(data.talos_image_factory_versions.this.talos_versions) - 1)
-  talos_version        = "v1.13.0" // local.talos_version_latest // "v1.12.6"
+  talos_version = "v1.13.0" // local.talos_version_latest // "v1.12.6"
 }
 
 data "talos_image_factory_extensions_versions" "this" {
@@ -130,4 +130,39 @@ resource "proxmox_virtual_environment_download_file" "talos_boot_image_storage" 
   decompression_algorithm = "zst"
   overwrite               = false
   overwrite_unmanaged     = true
+}
+
+#-------------------------------------------------------
+# Talos Worker Image for Bare Metal Installations
+#-------------------------------------------------------
+data "talos_image_factory_extensions_versions" "metal_worker" {
+  talos_version = local.talos_version
+  filters = {
+    names = [
+      "siderolabs/iscsi-tools",
+      "siderolabs/util-linux-tools",
+      "siderolabs/nfs-utils",
+      "siderolabs/nfsd",
+    ]
+  }
+}
+
+resource "talos_image_factory_schematic" "metal_worker" {
+  schematic = yamlencode({
+    customization = {
+      systemExtensions = {
+        officialExtensions = data.talos_image_factory_extensions_versions.metal_worker.extensions_info.*.name
+      }
+    }
+  })
+}
+
+data "talos_image_factory_urls" "metal_worker" {
+  talos_version = local.talos_version
+  schematic_id  = talos_image_factory_schematic.metal_worker.id
+  platform      = "metal"
+}
+
+output "iso_file_download" {
+  value = data.talos_image_factory_urls.metal_worker.urls.iso_secureboot
 }
