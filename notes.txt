@@ -234,3 +234,16 @@ https://cert-manager.io/docs/troubleshooting/
 https://cert-manager.io/docs/troubleshooting/acme/
 kubectl get issuers -A
 https://cert-manager.io/docs/configuration/acme/dns01/
+
+
+How to remove a control plain
+From https://oneuptime.com/blog/post/2026-03-03-remove-control-plane-node-from-talos-linux-cluster/view
+
+talosctl etcd members --nodes <any-other-control-plane-ip>
+talosctl etcd leave --nodes $NODE_TO_REMOVE
+talosctl etcd members --nodes <any-other-control-plane-ip>
+talosctl reset --nodes $NODE_TO_REMOVE --graceful=true
+kubectl delete node <node-name>
+talosctl config endpoints <remaining-cp-ip-1> <remaining-cp-ip-2>
+talosctl health --nodes <remaining-control-plane-ip>
+talosctl etcd members --nodes <remaining-control-plane-ip>

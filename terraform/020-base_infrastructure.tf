@@ -78,7 +78,7 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
   lifecycle {
     ignore_changes = [
       initialization,
-      # started,
+      started,
       startup,
     ]
   }
