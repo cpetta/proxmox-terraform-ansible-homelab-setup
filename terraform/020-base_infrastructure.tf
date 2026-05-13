@@ -14,7 +14,7 @@ resource "proxmox_virtual_environment_vm" "k8cp" {
   machine             = "q35,viommu=virtio"
 
   cpu {
-    cores = 2
+    cores = each.value.cpu
     type  = "host"
   }
   rng {
@@ -172,7 +172,7 @@ resource "proxmox_virtual_environment_vm" "k8s" {
 
   lifecycle {
     ignore_changes = [
-      # started,
+      started,
       startup,
     ]
   }
