@@ -8,7 +8,10 @@ data "talos_machine_configuration" "metal_control" {
   cluster_endpoint   = local.k8_cluster_config.endpoint
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.k8_cluster_config.kubernetes_version
-  config_patches     = [yamlencode(local.talos_metal_control_patch[each.key])]
+  config_patches     = [
+    yamlencode(local.talos_metal_control_patch[each.key]),
+    yamlencode(local.talos_metal_control_patch_hostname[each.key]),
+  ]
 }
 
 data "talos_client_configuration" "metal_control" {

@@ -10,8 +10,8 @@ data "talos_machine_configuration" "metal_worker" {
   kubernetes_version = local.k8_cluster_config.kubernetes_version
   config_patches     = [
     yamlencode(local.talos_metal_worker_patch[each.key]),
-    # yamlencode(local.talos_metal_worker_patch_additional[each.key])
-    ]
+    yamlencode(local.talos_metal_worker_patch_hostname[each.key])
+  ]
 }
 
 data "talos_client_configuration" "metal_worker" {
