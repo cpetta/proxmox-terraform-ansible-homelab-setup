@@ -7,6 +7,7 @@ data "talos_machine_configuration" "controlplane" {
   cluster_endpoint   = local.k8_cluster_config.endpoint
   machine_secrets    = talos_machine_secrets.this.machine_secrets
   kubernetes_version = local.k8_cluster_config.kubernetes_version
+  config_patches     = [yamlencode(local.talos_control_plane_patch)]
 }
 
 data "talos_client_configuration" "controlplane" {
@@ -21,7 +22,6 @@ resource "talos_machine_configuration_apply" "controlplane" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
   node                        = each.value.ip_address
-  config_patches              = [yamlencode(local.talos_control_plane_patch)]
 }
 
 resource "local_file" "talosconfig" {
@@ -44,15 +44,13 @@ resource "local_file" "kubeconfig" {
 # Backups
 #-------------------------------------------------------
 resource "local_file" "controlplane_client_config_backup" {
-  for_each = { for i, v in var.k8_control_plain_list : i => v if i > 0 }
   content  = yamlencode(talos_machine_secrets.this.client_configuration)
-  filename = "${path.module}/../backups/talos/controlplane_client_config_${each.value.name}.yaml"
+  filename = "${path.module}/../backups/talos/controlplane_client_config.yaml"
 }
 
 resource "local_file" "controlplane_machine_config_backup" {
-  for_each = { for i, v in var.k8_control_plain_list : i => v if i > 0 }
   content  = data.talos_machine_configuration.controlplane.machine_configuration
-  filename = "${path.module}/../backups/talos/controlplane_machine_config_${each.value.name}.yaml"
+  filename = "${path.module}/../backups/talos/controlplane_machine_config.yaml"
 }
 
 resource "local_file" "secrets_backup" {
